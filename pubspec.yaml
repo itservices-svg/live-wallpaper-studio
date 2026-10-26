@@ -1,0 +1,23 @@
+name: live_wallpaper_studio
+description: Create live wallpapers and Lock + Home themes from video or photos.
+publish_to: "none"
+version: 0.2.0+2
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  photo_manager: ^3.6.0
+  photo_manager_image_provider: ^2.2.0
+  video_player: ^2.9.2
+  video_thumbnail: ^0.5.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
