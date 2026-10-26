@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,12 +37,39 @@ jobs:
 
       - run: flutter pub get
 
-      - run: flutter analyze --no-fatal-infos --no-fatal-warnings || true
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee /tmp/analyze.log || true
 
-      - run: flutter build apk --release
+      - name: Build APK
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee /tmp/build.log
 
       - uses: actions/upload-artifact@v4
         with:
           name: live-wallpaper-studio-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+      # Keep the latest APK on a "builds" branch so it can be fetched without the Actions UI.
+      - name: Publish APK to builds branch
+        run: |
+          mkdir /tmp/apk && cp build/app/outputs/flutter-apk/app-release.apk /tmp/apk/live-wallpaper-studio.apk
+          cd /tmp/apk
+          git init -q && git checkout -q -b builds
+          git config user.name "ci" && git config user.email "ci@users.noreply.github.com"
+          git add . && git commit -qm "APK from ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" builds
+
+      # Small text logs on a branch, so a failed build can be read without the Actions UI.
+      - name: Publish logs to ci-logs branch
+        if: always()
+        run: |
+          mkdir /tmp/logs
+          cp /tmp/analyze.log /tmp/logs/analyze.log 2>/dev/null || true
+          tail -n 400 /tmp/build.log > /tmp/logs/build-tail.log 2>/dev/null || true
+          cd /tmp/logs
+          git init -q && git checkout -q -b ci-logs
+          git config user.name "ci" && git config user.email "ci@users.noreply.github.com"
+          git add . && git commit -qm "logs for ${GITHUB_SHA::7}" || exit 0
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-logs
