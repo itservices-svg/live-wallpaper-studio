@@ -20,8 +20,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Pinned: video_thumbnail does not build with the Android Gradle Plugin 9 that
+      # newer Flutter templates use. Move off this pin when that plugin is replaced.
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.35.x"
           channel: stable
           cache: true
 
