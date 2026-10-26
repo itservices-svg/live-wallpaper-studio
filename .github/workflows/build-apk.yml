@@ -54,6 +54,20 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
 
+      # Keep a single easy-to-find "Latest Android APK" release, updating its APK on each successful build.
+      - name: Publish APK to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: latest
+          name: Latest Android APK
+          body: |
+            Automatically built Android APK.
+            Download live-wallpaper-studio.apk below.
+          make_latest: true
+          files: build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # Keep the latest APK on a "builds" branch so it can be fetched without the Actions UI.
       - name: Publish APK to builds branch
         run: |
