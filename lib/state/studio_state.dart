@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
-import 'package:video_thumb_kit/video_thumb_kit.dart' as vt;
+import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 
 import '../data/scenes.dart';
 import '../services/library_store.dart';
@@ -256,8 +256,9 @@ class StudioState extends ChangeNotifier {
     for (var i = 0; i < stripCount; i++) {
       if (token != _loadToken) return;
       try {
-        final b = await vt.VideoThumbKit.thumbnailData(
+        final b = await vt.VideoThumbnail.thumbnailData(
           video: path,
+          imageFormat: vt.ImageFormat.JPEG,
           timeMs: ((i + 0.5) / stripCount * sourceLen * 1000).round(),
           maxHeight: 120,
           quality: 60,
@@ -276,8 +277,9 @@ class StudioState extends ChangeNotifier {
     final path = _videoPath;
     if (path == null) return;
     try {
-      final b = await vt.VideoThumbKit.thumbnailData(
+      final b = await vt.VideoThumbnail.thumbnailData(
         video: path,
+        imageFormat: vt.ImageFormat.JPEG,
         timeMs: (key * 1000).round(),
         maxHeight: 1280,
         quality: 85,
