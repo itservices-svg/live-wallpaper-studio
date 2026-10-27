@@ -38,3 +38,12 @@ for name in ("build.gradle.kts", "build.gradle"):
             print("minSdk set to 24 in", g)
         else:
             print("WARNING: minSdk pattern not found in", g, file=sys.stderr)
+
+# AGP 9 opts: some plugins still use the legacy Android DSL / their own Kotlin plugin.
+gp = ANDROID / "gradle.properties"
+props = gp.read_text() if gp.exists() else ""
+for line in ("android.newDsl=false", "android.builtInKotlin=false", "android.disallowKotlinSourceSets=false"):
+    if line.split("=")[0] not in props:
+        props += ("\n" if props and not props.endswith("\n") else "") + line + "\n"
+gp.write_text(props)
+print("Updated", gp)
