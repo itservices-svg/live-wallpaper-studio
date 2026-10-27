@@ -20,9 +20,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # flutter_wallpaper_plus needs Dart 3.11+, so follow the latest stable Flutter.
+      # Pinned to 3.41 (Dart 3.11, AGP 8.x template): flutter_wallpaper_plus needs Dart 3.11
+      # and its Gradle script does not build with the AGP 9 used by newer templates.
       - uses: subosito/flutter-action@v2
         with:
+          flutter-version: "3.41.x"
           channel: stable
           cache: true
 
