@@ -38,7 +38,11 @@ jobs:
       - name: Add gallery permissions and app name
         run: python3 tools/patch_android.py
 
-      - run: flutter pub get
+      - name: Get packages
+        run: |
+          set -o pipefail
+          flutter --version 2>&1 | tee /tmp/pubget.log
+          flutter pub get 2>&1 | tee -a /tmp/pubget.log
 
       - name: Generate launcher icons
         run: dart run flutter_launcher_icons
@@ -89,6 +93,7 @@ jobs:
         run: |
           mkdir /tmp/logs
           cp /tmp/analyze.log /tmp/logs/analyze.log 2>/dev/null || true
+          cp /tmp/pubget.log /tmp/logs/pubget.log 2>/dev/null || true
           tail -n 400 /tmp/build.log > /tmp/logs/build-tail.log 2>/dev/null || true
           if [ "$GITHUB_REF" = "refs/heads/main" ]; then TARGET=ci-logs; else TARGET=ci-logs-dev; fi
           cd /tmp/logs
