@@ -10,6 +10,8 @@ import 'widgets/common.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  studio.loadLibrary();
   runApp(const LiveWallpaperStudioApp());
 }
 
@@ -22,6 +24,16 @@ class LiveWallpaperStudioApp extends StatelessWidget {
       title: 'Live Wallpaper Studio',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
+      // Keep layouts intact when the phone uses a very large or small font size.
+      builder: (context, child) {
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(
+            textScaler: mq.textScaler.clamp(minScaleFactor: 0.85, maxScaleFactor: 1.15),
+          ),
+          child: child!,
+        );
+      },
       home: const HomeShell(),
     );
   }

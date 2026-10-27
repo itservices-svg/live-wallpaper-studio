@@ -105,13 +105,16 @@ class _PreviewCard extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
-      height: 322,
+      height: (MediaQuery.of(context).size.height * 0.4).clamp(240.0, 360.0).toDouble(),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(22),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            LiveBackdrop(state: state, showVideo: true, animate: state.playing),
+            _PinchLayer(
+              state: state,
+              child: LiveBackdrop(state: state, showVideo: true, animate: state.playing),
+            ),
             if (state.mediaError)
               const Center(
                 child: Text('Could not open this video',
@@ -144,8 +147,11 @@ class _PreviewCard extends StatelessWidget {
                       color: Colors.white.withOpacity(0.22),
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: const Text('Pinch to reposition',
-                        style: TextStyle(color: Colors.white, fontSize: 10)),
+                    child: Text(
+                        state.zoom > 1
+                            ? 'Zoom ${state.zoom.toStringAsFixed(1)}x · drag to move'
+                            : 'Pinch to reposition',
+                        style: const TextStyle(color: Colors.white, fontSize: 10)),
                   ),
                 ],
               ),
@@ -163,6 +169,42 @@ class _PreviewCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Two-finger pinch zooms, one finger moves the picture once it is zoomed.
+class _PinchLayer extends StatefulWidget {
+  const _PinchLayer({required this.state, required this.child});
+
+  final StudioState state;
+  final Widget child;
+
+  @override
+  State<_PinchLayer> createState() => _PinchLayerState();
+}
+
+class _PinchLayerState extends State<_PinchLayer> {
+  double _baseZoom = 1;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.state;
+    return LayoutBuilder(builder: (context, bc) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onScaleStart: (_) => _baseZoom = s.zoom,
+        onScaleUpdate: (d) {
+          final z = (_baseZoom * d.scale).clamp(1.0, 4.0).toDouble();
+          final slackX = (z - 1) / 2 * bc.maxWidth;
+          final slackY = (z - 1) / 2 * bc.maxHeight;
+          final px = slackX <= 0 ? 0.0 : s.panX + d.focalPointDelta.dx / slackX;
+          final py = slackY <= 0 ? 0.0 : s.panY + d.focalPointDelta.dy / slackY;
+          s.setFraming(z, px, py);
+        },
+        onDoubleTap: () => s.setFraming(1, 0, 0),
+        child: widget.child,
+      );
+    });
   }
 }
 

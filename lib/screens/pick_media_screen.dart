@@ -59,6 +59,7 @@ class _PickMediaScreenState extends State<PickMediaScreen> {
   bool _askedOnce = false;
   int _videoCount = 0;
   int _photoCount = 0;
+  String _albumName = 'Recents';
 
   bool get _hasAccess => _perm?.hasAccess ?? false;
 
@@ -100,7 +101,58 @@ class _PickMediaScreenState extends State<PickMediaScreen> {
     await _fillFirstPage();
   }
 
+  Future<void> _pickAlbum() async {
+    if (_samples || !_hasAccess) return;
+    final video = studio.pickVideo;
+    final list = await MediaPager.albums(video: video);
+    if (!mounted) return;
+    final counts = await Future.wait([for (final p in list) p.assetCountAsync]);
+    if (!mounted) return;
+    final chosen = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (_) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(8, 14, 8, 12),
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text('Albums', style: AppText.h2),
+              ),
+              for (var i = 0; i < list.length; i++)
+                if (counts[i] > 0)
+                  ListTile(
+                    title: Text(list[i].isAll ? 'Recents' : list[i].name,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    trailing: Text('${counts[i]}', style: AppText.mono),
+                    onTap: () => Navigator.of(context).pop(i),
+                  ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    setState(() {
+      _loading = true;
+      _days.clear();
+      _sel = null;
+      _albumName = list[chosen].isAll ? 'Recents' : list[chosen].name;
+    });
+    _pager = await MediaPager.fromPath(list[chosen]);
+    if (!mounted) return;
+    await _fillFirstPage();
+  }
+
   Future<void> _openKind() async {
+    _albumName = 'Recents';
     setState(() {
       _loading = true;
       _days.clear();
@@ -197,9 +249,7 @@ class _PickMediaScreenState extends State<PickMediaScreen> {
                     AppNav(
                       title: 'Pick Media',
                       back: 'Create',
-                      trailing: const Text('Albums',
-                          style: TextStyle(
-                              color: AppColors.sub, fontWeight: FontWeight.w600, fontSize: 15)),
+                      trailing: NavAction('Albums', onTap: _pickAlbum),
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
@@ -209,7 +259,20 @@ class _PickMediaScreenState extends State<PickMediaScreen> {
                           const SizedBox(width: 8),
                           _Chip('Photos', _fmtInt(_total(false)), !video, () => _setKind(false)),
                           const Spacer(),
-                          Text(_samples ? 'Samples' : 'Recents ▾', style: const TextStyle(fontSize: 12)),
+                          GestureDetector(
+                            onTap: _samples ? null : _pickAlbum,
+                            behavior: HitTestBehavior.opaque,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 120),
+                                child: Text(_samples ? 'Samples' : '$_albumName ▾',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 12)),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),

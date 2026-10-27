@@ -1,45 +1,89 @@
-import 'package:flutter/services.dart';
+import 'dart:io';
 
-enum WallpaperTarget { lock, home, both }
+import 'package:flutter_wallpaper_plus/flutter_wallpaper_plus.dart' as fwp;
+import 'package:photo_manager/photo_manager.dart';
 
-/// Bridge to the native side.
-///
-/// Prototype behaviour: when no native handler is registered yet
-/// (MissingPluginException) every call succeeds, so the UI flow can be tested.
-/// See README for what to implement on each platform.
+import 'exporter.dart';
+
+/// What the user can apply. [live] is the system video-wallpaper flow.
+enum ApplyTarget { lock, home, both, live }
+
+class ApplyResult {
+  const ApplyResult(this.ok, this.message);
+  final bool ok;
+  final String message;
+}
+
+/// Sets wallpapers through the flutter_wallpaper_plus package (Android) and
+/// saves to the photo library on iOS, where apps cannot set wallpapers.
 class WallpaperService {
-  static const MethodChannel _ch = MethodChannel('live_wallpaper_studio/native');
-
-  /// iOS: write the Live Photo (video + still) and the Home still to Photos.
-  static Future<bool> saveLivePhotoPair({
-    required String name,
-    required double startSec,
-    required double endSec,
-    required double keyFrameSec,
-  }) =>
-      _call('saveLivePhotoPair', {
-        'name': name,
-        'start': startSec,
-        'end': endSec,
-        'keyFrame': keyFrameSec,
-      });
-
-  /// Android: open the system live-wallpaper chooser for this theme
-  /// (WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER) or apply a still.
-  static Future<bool> setLiveWallpaper({
-    required String name,
-    required WallpaperTarget target,
-  }) =>
-      _call('setLiveWallpaper', {'name': name, 'target': target.name});
-
-  static Future<bool> _call(String method, Map<String, Object?> args) async {
+  static Future<ApplyResult> applyAndroid(ApplyTarget t, ExportFiles f) async {
     try {
-      final ok = await _ch.invokeMethod<bool>(method, args);
-      return ok ?? false;
-    } on MissingPluginException {
-      return true; // prototype mode
-    } on PlatformException {
-      return false;
+      switch (t) {
+        case ApplyTarget.lock:
+          return _image(f.lockPath, fwp.WallpaperTarget.lock, 'Lock screen updated');
+        case ApplyTarget.home:
+          return _image(f.homePath, fwp.WallpaperTarget.home, 'Home screen updated');
+        case ApplyTarget.both:
+          final lock = await _image(f.lockPath, fwp.WallpaperTarget.lock, '');
+          if (!lock.ok) return lock;
+          final home = await _image(f.homePath, fwp.WallpaperTarget.home, '');
+          if (!home.ok) return home;
+          return const ApplyResult(true, 'Lock + Home updated');
+        case ApplyTarget.live:
+          final v = f.videoPath;
+          if (v == null) return const ApplyResult(false, 'Live wallpaper needs a video.');
+          final r = await fwp.FlutterWallpaperPlus.setVideoWallpaper(
+            source: fwp.WallpaperSource.file(v),
+            target: fwp.WallpaperTarget.home,
+            enableAudio: false,
+            loop: true,
+            goToHome: false,
+          );
+          return r.success
+              ? const ApplyResult(true, 'Confirm in the system screen to start the live wallpaper')
+              : ApplyResult(false, _explain(r));
+      }
+    } catch (e) {
+      return ApplyResult(false, 'Could not set wallpaper: $e');
+    }
+  }
+
+  static Future<ApplyResult> _image(String path, fwp.WallpaperTarget target, String okMsg) async {
+    final r = await fwp.FlutterWallpaperPlus.setImageWallpaper(
+      source: fwp.WallpaperSource.file(path),
+      target: target,
+    );
+    return r.success ? ApplyResult(true, okMsg) : ApplyResult(false, _explain(r));
+  }
+
+  static String _explain(fwp.WallpaperResult r) {
+    switch (r.errorCode) {
+      case fwp.WallpaperErrorCode.permissionDenied:
+        return 'Permission denied. Allow wallpaper/media access and try again.';
+      case fwp.WallpaperErrorCode.manufacturerRestriction:
+        return 'This phone restricts setting this screen from apps. Try Home only, or set it from Gallery.';
+      case fwp.WallpaperErrorCode.unsupported:
+        return 'This option is not supported on your phone.';
+      default:
+        return r.message.isEmpty ? 'Could not set wallpaper.' : r.message;
+    }
+  }
+
+  /// iOS: write the stills (and the clip for videos) to Photos.
+  static Future<ApplyResult> saveToPhotos(ExportFiles f, {required String name}) async {
+    try {
+      final perm = await PhotoManager.requestPermissionExtend();
+      if (!perm.hasAccess) return const ApplyResult(false, 'Allow Photos access to save.');
+      final v = f.videoPath;
+      if (v != null) {
+        await PhotoManager.editor.saveVideo(File(v), title: '$name.mov');
+      }
+      await PhotoManager.editor.saveImageWithPath(f.lockPath, title: '$name Lock.png');
+      await PhotoManager.editor.saveImageWithPath(f.homePath, title: '$name Home.png');
+      return const ApplyResult(true, 'Saved to Photos');
+    } catch (e) {
+      return ApplyResult(false, 'Could not save: $e');
     }
   }
 }

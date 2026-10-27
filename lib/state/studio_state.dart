@@ -7,9 +7,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
-import 'package:video_thumbnail/video_thumbnail.dart' as vt;
+import 'package:video_thumb_kit/video_thumb_kit.dart' as vt;
 
 import '../data/scenes.dart';
+import '../services/library_store.dart';
 
 enum WallMode { single, theme }
 
@@ -66,6 +67,11 @@ class StudioState extends ChangeNotifier {
   bool playing = true;
   LoopStyle loop = LoopStyle.loop;
 
+  // framing (pinch in the Motion Editor): zoom 1..4, pan -1..1 of the free slack
+  double zoom = 1;
+  double panX = 0;
+  double panY = 0;
+
   // theme builder
   double blur = 24;
   double dim = 32;
@@ -83,6 +89,7 @@ class StudioState extends ChangeNotifier {
 
   bool get isIOS =>
       platformOverrideIOS ?? (defaultTargetPlatform == TargetPlatform.iOS);
+  String? get videoPath => _videoPath;
   Scene get scene => scenes[media.sceneIndex % scenes.length];
   double get span => end - start;
   double get maxSpan => math.min(_maxLoop, sourceLen);
@@ -120,12 +127,16 @@ class StudioState extends ChangeNotifier {
   }
 
   /// Makes [m] the current source and starts loading whatever it needs.
-  void loadMedia(MediaItem m) {
+  void loadMedia(MediaItem m, {SavedTheme? restore}) {
+    _restore = restore;
     final token = ++_loadToken;
     _disposeVideo();
     media = m;
     themeName = m.name;
     tintIdx = 0;
+    zoom = 1;
+    panX = 0;
+    panY = 0;
     saved = false;
     playing = true;
     _dir = 1;
@@ -149,8 +160,34 @@ class StudioState extends ChangeNotifier {
       palette = _greyPalette;
     }
     playhead = start;
+    _applyRestore(video: false);
     notifyListeners();
     if (a != null) unawaited(_loadReal(m, token));
+  }
+
+  SavedTheme? _restore;
+
+  /// Applies saved theme settings once the real clip length is known.
+  void _applyRestore({required bool video}) {
+    final r = _restore;
+    if (r == null) return;
+    if (video) _restore = null;
+    if (media.isVideo && !video) return; // wait for the clip length
+    blur = r.blur;
+    dim = r.dim;
+    tint = r.tint;
+    tintIdx = r.tintIdx;
+    zoom = r.zoom;
+    panX = r.panX;
+    panY = r.panY;
+    if (media.isVideo) {
+      start = r.start.clamp(0.0, math.max(0.0, sourceLen - minSpanEff)).toDouble();
+      end = r.end.clamp(start + minSpanEff, sourceLen).toDouble();
+      key = r.key.clamp(start, end).toDouble();
+      playhead = start;
+    }
+    themeName = r.name;
+    _restore = null;
   }
 
   Future<void> _loadReal(MediaItem m, int token) async {
@@ -185,6 +222,7 @@ class StudioState extends ChangeNotifier {
         key = (start + end) / 2;
         playhead = start;
       }
+      _applyRestore(video: true);
       video = c;
       videoReady = true;
       strip = List<Uint8List?>.filled(stripCount, null);
@@ -219,9 +257,8 @@ class StudioState extends ChangeNotifier {
     for (var i = 0; i < stripCount; i++) {
       if (token != _loadToken) return;
       try {
-        final b = await vt.VideoThumbnail.thumbnailData(
+        final b = await vt.VideoThumbKit.thumbnailData(
           video: path,
-          imageFormat: vt.ImageFormat.JPEG,
           timeMs: ((i + 0.5) / stripCount * sourceLen * 1000).round(),
           maxHeight: 120,
           quality: 60,
@@ -240,9 +277,8 @@ class StudioState extends ChangeNotifier {
     final path = _videoPath;
     if (path == null) return;
     try {
-      final b = await vt.VideoThumbnail.thumbnailData(
+      final b = await vt.VideoThumbKit.thumbnailData(
         video: path,
-        imageFormat: vt.ImageFormat.JPEG,
         timeMs: (key * 1000).round(),
         maxHeight: 1280,
         quality: 85,
@@ -476,12 +512,73 @@ class StudioState extends ChangeNotifier {
     themeName = v.trim().isEmpty ? 'Untitled' : v;
   }
 
+  void setFraming(double z, double px, double py) {
+    zoom = z.clamp(1.0, 4.0).toDouble();
+    panX = zoom <= 1 ? 0 : px.clamp(-1.0, 1.0).toDouble();
+    panY = zoom <= 1 ? 0 : py.clamp(-1.0, 1.0).toDouble();
+    notifyListeners();
+    // The key frame is re-rendered at full size, framing is applied on top.
+  }
+
   void resetTheme() {
     blur = 24;
     dim = 32;
     tint = 68;
     tintIdx = 0;
     notifyListeners();
+  }
+
+  // ---- saved themes (Recent)
+  List<SavedTheme> library = const [];
+
+  Future<void> loadLibrary() async {
+    library = await LibraryStore.load();
+    notifyListeners();
+  }
+
+  Future<void> saveCurrent() async {
+    final t = SavedTheme(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      assetId: media.asset?.id ?? 'sample:${media.sceneIndex}',
+      name: themeName,
+      isVideo: media.isVideo,
+      duration: media.isVideo ? fmtDur(Duration(milliseconds: (span * 1000).round())) : '',
+      createdMs: DateTime.now().millisecondsSinceEpoch,
+      blur: blur,
+      dim: dim,
+      tint: tint,
+      tintIdx: tintIdx,
+      start: start,
+      end: end,
+      key: key,
+      zoom: zoom,
+      panX: panX,
+      panY: panY,
+    );
+    library = [t, ...library].take(40).toList();
+    notifyListeners();
+    await LibraryStore.save(library);
+  }
+
+  Future<void> removeSaved(String id) async {
+    library = library.where((e) => e.id != id).toList();
+    notifyListeners();
+    await LibraryStore.save(library);
+  }
+
+  /// Re-opens a saved theme. False when its photo or video is gone from the gallery.
+  Future<bool> openSaved(SavedTheme t) async {
+    MediaItem item;
+    if (t.assetId.startsWith('sample:')) {
+      final idx = int.tryParse(t.assetId.substring(7)) ?? 0;
+      item = MediaItem(t.name, t.isVideo ? '0:12' : '', idx);
+    } else {
+      final a = await AssetEntity.fromId(t.assetId);
+      if (a == null) return false;
+      item = MediaItem.fromAsset(a);
+    }
+    loadMedia(item, restore: t);
+    return true;
   }
 
   // ---- preview + guide

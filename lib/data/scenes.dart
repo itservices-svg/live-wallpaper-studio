@@ -113,19 +113,3 @@ final photoGroups = <MediaGroup>[
     for (var i = 0; i < scenes.length; i++) MediaItem(scenes[i].name, '', i),
   ]),
 ];
-
-class RecentItem {
-  const RecentItem(this.name, this.sceneIndex, this.duration, this.live, this.ago);
-  final String name;
-  final int sceneIndex;
-  final String duration;
-  final bool live;
-  final String ago;
-}
-
-const recents = <RecentItem>[
-  RecentItem('Tide Pool', 8, '0:04.2', true, '2h ago'),
-  RecentItem('Neon Rain', 7, '0:03.0', true, 'Yesterday'),
-  RecentItem('Golden Hour', 1, '0:05.0', true, 'Mon'),
-  RecentItem('Fern Study', 11, '', false, '12 Oct'),
-];

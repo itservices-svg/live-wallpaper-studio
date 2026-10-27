@@ -91,19 +91,13 @@ class _ThemeBuilderScreenState extends State<ThemeBuilderScreen> {
                 const SizedBox(height: 8),
                 Center(child: Text('PAIRED', style: AppText.mono.copyWith(letterSpacing: 1.4))),
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Seg(
-                        square: true,
-                        labels: ['Video frame', 'My Photos'],
-                        index: 0,
-                        onChanged: _noop,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text('F 0094', style: AppText.mono),
-                  ],
+                Center(
+                  child: Text(
+                    s.media.isVideo
+                        ? 'HOME STILL · KEY FRAME ${fmtTime(s.key)}'
+                        : 'HOME STILL · YOUR PHOTO',
+                    style: AppText.mono,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -172,7 +166,6 @@ class _ThemeBuilderScreenState extends State<ThemeBuilderScreen> {
   }
 }
 
-void _noop(int _) {}
 
 class _Slider extends StatelessWidget {
   const _Slider(this.label, this.value, this.max, this.out, this.onChanged);

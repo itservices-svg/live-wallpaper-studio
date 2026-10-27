@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev-android]
   workflow_dispatch:
 
 permissions:
@@ -20,11 +20,9 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # Pinned: video_thumbnail does not build with the Android Gradle Plugin 9 that
-      # newer Flutter templates use. Move off this pin when that plugin is replaced.
+      # flutter_wallpaper_plus needs Dart 3.11+, so follow the latest stable Flutter.
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.35.x"
           channel: stable
           cache: true
 
@@ -59,6 +57,7 @@ jobs:
 
       # Keep a single easy-to-find "Latest Android APK" release, updating its APK on each successful build.
       - name: Publish APK to GitHub Release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: latest
@@ -74,12 +73,13 @@ jobs:
       # Keep the latest APK on a "builds" branch so it can be fetched without the Actions UI.
       - name: Publish APK to builds branch
         run: |
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then TARGET=builds; else TARGET=builds-dev; fi
           mkdir /tmp/apk && cp build/app/outputs/flutter-apk/app-release.apk /tmp/apk/live-wallpaper-studio.apk
           cd /tmp/apk
-          git init -q && git checkout -q -b builds
+          git init -q && git checkout -q -b "$TARGET"
           git config user.name "ci" && git config user.email "ci@users.noreply.github.com"
           git add . && git commit -qm "APK from ${GITHUB_SHA::7}"
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" builds
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" "$TARGET"
 
       # Small text logs on a branch, so a failed build can be read without the Actions UI.
       - name: Publish logs to ci-logs branch
@@ -88,8 +88,9 @@ jobs:
           mkdir /tmp/logs
           cp /tmp/analyze.log /tmp/logs/analyze.log 2>/dev/null || true
           tail -n 400 /tmp/build.log > /tmp/logs/build-tail.log 2>/dev/null || true
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then TARGET=ci-logs; else TARGET=ci-logs-dev; fi
           cd /tmp/logs
-          git init -q && git checkout -q -b ci-logs
+          git init -q && git checkout -q -b "$TARGET"
           git config user.name "ci" && git config user.email "ci@users.noreply.github.com"
           git add . && git commit -qm "logs for ${GITHUB_SHA::7}" || exit 0
-          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-logs
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" "$TARGET"

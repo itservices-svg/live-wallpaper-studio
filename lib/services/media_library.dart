@@ -15,6 +15,19 @@ class MediaPager {
 
   static Future<PermissionState> requestAccess() => PhotoManager.requestPermissionExtend();
 
+  /// All albums that contain videos or photos, "Recent" first.
+  static Future<List<AssetPathEntity>> albums({required bool video}) {
+    return PhotoManager.getAssetPathList(
+      type: video ? RequestType.video : RequestType.image,
+      filterOption: FilterOptionGroup(
+        orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+      ),
+    );
+  }
+
+  static Future<MediaPager> fromPath(AssetPathEntity p) async =>
+      MediaPager._(p, await p.assetCountAsync);
+
   /// Opens the "Recent / All" album for videos or photos. Null when it is empty.
   static Future<MediaPager?> open({required bool video}) async {
     final paths = await PhotoManager.getAssetPathList(

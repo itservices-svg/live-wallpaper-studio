@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/exporter.dart';
 import '../services/wallpaper_service.dart';
 import '../state/studio_state.dart';
 import '../theme.dart';
@@ -61,37 +62,43 @@ class _PreviewScreenState extends State<PreviewScreen> {
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
+  bool _busy = false;
+
   Future<void> _save() async {
-    if (studio.isIOS) {
-      final ok = await WallpaperService.saveLivePhotoPair(
-        name: studio.themeName,
-        startSec: studio.start,
-        endSec: studio.end,
-        keyFrameSec: studio.key,
-      );
-      if (!mounted) return;
-      if (!ok) return _toast('Could not save. Check Photos permission.');
-      studio.markSaved();
-      _toast('Saved to Photos · ${studio.exportFiles == 1 ? '1 file' : '2 files'}');
-      await Future<void>.delayed(const Duration(milliseconds: 900));
-      if (mounted) _backToRoot(tab: 1);
-    } else {
-      final target = await showModalBottomSheet<WallpaperTarget>(
+    if (_busy) return;
+    final s = studio;
+    ApplyTarget? target;
+    if (!s.isIOS) {
+      target = await showModalBottomSheet<ApplyTarget>(
         context: context,
         backgroundColor: Colors.white,
+        isScrollControlled: true,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
         ),
-        builder: (_) => const _TargetSheet(),
+        builder: (_) => _TargetSheet(canLive: s.media.isVideo && s.videoPath != null),
       );
       if (target == null || !mounted) return;
-      final ok = await WallpaperService.setLiveWallpaper(name: studio.themeName, target: target);
-      if (!mounted) return;
-      if (!ok) return _toast('Could not set wallpaper.');
-      _toast('Applied to ${_targetLabel(target)}');
-      await Future<void>.delayed(const Duration(milliseconds: 900));
-      if (mounted) _backToRoot(tab: 0);
     }
+    setState(() => _busy = true);
+    _stopHold();
+    ApplyResult result;
+    try {
+      final files = await Exporter.render(s);
+      result = s.isIOS
+          ? await WallpaperService.saveToPhotos(files, name: s.themeName)
+          : await WallpaperService.applyAndroid(target!, files);
+    } catch (e) {
+      result = ApplyResult(false, 'Something went wrong: $e');
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    _toast(result.message);
+    if (!result.ok) return;
+    s.markSaved();
+    await s.saveCurrent();
+    await Future<void>.delayed(const Duration(milliseconds: 900));
+    if (mounted && target != ApplyTarget.live) _backToRoot(tab: s.isIOS ? 1 : 0);
   }
 
   @override
@@ -107,7 +114,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
               children: [
                 AppNav(
-                  title: 'iPhone Preview',
+                  title: 'Preview',
                   back: 'Theme',
                   trailing: GestureDetector(
                     onTap: s.toggleDimPreview,
@@ -189,12 +196,20 @@ class _PreviewScreenState extends State<PreviewScreen> {
                   ],
                 ),
                 const SizedBox(height: 14),
-                PrimaryButton(
-                  wide: true,
-                  label: s.isIOS ? 'Save to Photos' : 'Set as wallpaper',
-                  sub: s.isIOS ? '${s.exportFiles} ${s.exportFiles == 1 ? 'file' : 'files'}' : null,
-                  onTap: _save,
-                ),
+                if (_busy)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 3)),
+                    ),
+                  )
+                else
+                  PrimaryButton(
+                    wide: true,
+                    label: s.isIOS ? 'Save to Photos' : 'Set as wallpaper',
+                    sub: s.isIOS ? '${s.exportFiles} ${s.exportFiles == 1 ? 'file' : 'files'}' : null,
+                    onTap: _save,
+                  ),
               ],
             ),
           ),
@@ -204,18 +219,21 @@ class _PreviewScreenState extends State<PreviewScreen> {
   }
 }
 
-String _targetLabel(WallpaperTarget t) => switch (t) {
-      WallpaperTarget.lock => 'Lock screen',
-      WallpaperTarget.home => 'Home screen',
-      WallpaperTarget.both => 'Lock + Home',
+String _targetLabel(ApplyTarget t) => switch (t) {
+      ApplyTarget.lock => 'Lock screen',
+      ApplyTarget.home => 'Home screen',
+      ApplyTarget.both => 'Lock + Home',
+      ApplyTarget.live => 'Live wallpaper',
     };
 
 class _TargetSheet extends StatelessWidget {
-  const _TargetSheet();
+  const _TargetSheet({required this.canLive});
+
+  final bool canLive;
 
   @override
   Widget build(BuildContext context) {
-    Widget option(WallpaperTarget t, String hint) {
+    Widget option(ApplyTarget t, String hint) {
       return Padding(
         padding: const EdgeInsets.only(top: 8),
         child: OutlinedButton(
@@ -224,13 +242,22 @@ class _TargetSheet extends StatelessWidget {
             foregroundColor: AppColors.ink,
             side: const BorderSide(color: AppColors.line),
             padding: const EdgeInsets.all(14),
+            minimumSize: const Size.fromHeight(52),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(_targetLabel(t), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-              Text(hint, style: AppText.small.copyWith(fontSize: 11)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  hint,
+                  textAlign: TextAlign.end,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.small.copyWith(fontSize: 11),
+                ),
+              ),
             ],
           ),
         ),
@@ -238,7 +265,7 @@ class _TargetSheet extends StatelessWidget {
     }
 
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -246,11 +273,21 @@ class _TargetSheet extends StatelessWidget {
           children: [
             const Text('Set wallpaper', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            Text('${studio.themeName} · live loop ${fmtSec(studio.span)}', style: AppText.small),
+            Text(studio.themeName, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small),
             const SizedBox(height: 6),
-            option(WallpaperTarget.lock, 'Live'),
-            option(WallpaperTarget.home, 'Blurred still'),
-            option(WallpaperTarget.both, 'Theme pair'),
+            option(ApplyTarget.lock, studio.media.isVideo ? 'Key frame still' : 'Photo'),
+            option(ApplyTarget.home, 'Blurred, dimmed, tinted'),
+            option(ApplyTarget.both, 'Theme pair'),
+            if (canLive) option(ApplyTarget.live, 'Moving video · home · you confirm'),
+            if (studio.media.isVideo)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  'Android only allows live video on the home screen, and the whole clip loops. '
+                  'Lock screen always gets a still.',
+                  style: AppText.small.copyWith(fontSize: 11),
+                ),
+              ),
           ],
         ),
       ),

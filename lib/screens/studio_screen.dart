@@ -1,7 +1,11 @@
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:photo_manager/photo_manager.dart';
 
 import '../data/scenes.dart';
+import '../services/library_store.dart';
 import '../state/studio_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
@@ -25,13 +29,80 @@ class StudioScreen extends StatelessWidget {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PickMediaScreen()));
   }
 
-  void _openRecent(BuildContext context, RecentItem r) {
-    studio.loadScene(r.sceneIndex, name: r.name, video: r.live);
-    if (r.live) {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MotionEditorScreen()));
-    } else {
-      goAfterEdit(context, fromVideo: false);
+  Future<void> _openRecent(BuildContext context, SavedTheme t) async {
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await studio.openSaved(t);
+    if (!ok) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(
+          content: Text('That photo or video is no longer in your gallery.'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      return;
     }
+    if (t.isVideo) {
+      nav.push(MaterialPageRoute(builder: (_) => const MotionEditorScreen()));
+    } else {
+      nav.push(MaterialPageRoute(
+          builder: (_) => studio.mode == WallMode.theme
+              ? const ThemeBuilderScreen()
+              : const PreviewScreen()));
+    }
+  }
+
+  void _seeAll(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheet) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        builder: (_, controller) => ListenableBuilder(
+          listenable: studio,
+          builder: (_, __) => Column(
+            children: [
+              const SizedBox(height: 14),
+              const Text('All themes', style: AppText.h2),
+              Text('Tap to edit · long-press to delete', style: AppText.small),
+              const SizedBox(height: 10),
+              Expanded(
+                child: studio.library.isEmpty
+                    ? Center(child: Text('Nothing saved yet', style: AppText.small))
+                    : GridView.builder(
+                        controller: controller,
+                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 10,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 0.52,
+                        ),
+                        itemCount: studio.library.length,
+                        itemBuilder: (_, i) {
+                          final t = studio.library[i];
+                          return _RecentTile(
+                            item: t,
+                            onTap: () {
+                              Navigator.of(sheet).pop();
+                              _openRecent(context, t);
+                            },
+                            onLongPress: () => studio.removeSaved(t.id),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -90,25 +161,52 @@ class StudioScreen extends StatelessWidget {
                 children: [
                   const Text('Recent', style: AppText.h2),
                   const SizedBox(width: 4),
-                  Text(recents.length.toString().padLeft(2, '0'), style: AppText.mono),
+                  Text(studio.library.length.toString().padLeft(2, '0'), style: AppText.mono),
                   const Spacer(),
-                  const Text('See All',
-                      style: TextStyle(
-                          color: AppColors.pri, fontWeight: FontWeight.w600, fontSize: 13)),
+                  if (studio.library.length > 4)
+                    GestureDetector(
+                      onTap: () => _seeAll(context),
+                      behavior: HitTestBehavior.opaque,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                        child: Text('See All',
+                            style: TextStyle(
+                                color: AppColors.pri, fontWeight: FontWeight.w600, fontSize: 13)),
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 10),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (var i = 0; i < recents.length; i++) ...[
-                    if (i > 0) const SizedBox(width: 9),
-                    Expanded(
-                      child: _RecentTile(item: recents[i], onTap: () => _openRecent(context, recents[i])),
-                    ),
+              if (studio.library.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: AppColors.line),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Themes you set as wallpaper show up here so you can edit them again.',
+                    style: AppText.small,
+                  ),
+                )
+              else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var i = 0; i < 4; i++) ...[
+                      if (i > 0) const SizedBox(width: 9),
+                      Expanded(
+                        child: i < studio.library.length
+                            ? _RecentTile(
+                                item: studio.library[i],
+                                onTap: () => _openRecent(context, studio.library[i]),
+                                onLongPress: () => studio.removeSaved(studio.library[i].id),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
                   ],
-                ],
-              ),
+                ),
             ],
           ),
         );
@@ -129,7 +227,7 @@ class _CreateCard extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: Ink(
-          height: 262,
+          height: (MediaQuery.of(context).size.height * 0.31).clamp(210.0, 280.0).toDouble(),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.line),
@@ -193,9 +291,13 @@ class _CreateCard extends StatelessWidget {
                     ),
                   ),
                   Text(video ? 'New from video' : 'New from photo',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 2),
-                  Text(video ? 'Trim & loop into a Live Photo' : 'Crop to Lock or Home',
+                  Text(video ? 'Trim & loop a live clip' : 'Frame it for Lock or Home',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: AppText.small.copyWith(fontSize: 11.5)),
                 ],
               ),
@@ -232,15 +334,17 @@ class _Bars extends StatelessWidget {
 }
 
 class _RecentTile extends StatelessWidget {
-  const _RecentTile({required this.item, required this.onTap});
+  const _RecentTile({required this.item, required this.onTap, required this.onLongPress});
 
-  final RecentItem item;
+  final SavedTheme item;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -251,14 +355,20 @@ class _RecentTile extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  SceneView(scene: scenes[item.sceneIndex]),
-                  Positioned(left: 4, top: 4, child: Pill(item.live ? 'LIVE' : 'STILL', live: item.live)),
+                  _SavedThumb(assetId: item.assetId),
+                  Positioned(
+                      left: 4,
+                      top: 4,
+                      child: Pill(item.isVideo ? 'LIVE' : 'STILL', live: item.isVideo)),
                   if (item.duration.isNotEmpty)
                     Positioned(
                       right: 4,
                       bottom: 4,
                       child: Text(item.duration,
-                          style: AppText.mono.copyWith(fontSize: 9, color: Colors.white)),
+                          style: AppText.mono.copyWith(
+                              fontSize: 9,
+                              color: Colors.white,
+                              shadows: const [Shadow(color: Colors.black54, blurRadius: 4)])),
                     ),
                 ],
               ),
@@ -269,9 +379,45 @@ class _RecentTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
-          Text(item.ago, style: AppText.small.copyWith(fontSize: 10)),
+          Text(item.ago, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: AppText.small.copyWith(fontSize: 10)),
         ],
       ),
+    );
+  }
+}
+
+class _SavedThumb extends StatefulWidget {
+  const _SavedThumb({required this.assetId});
+
+  final String assetId;
+
+  @override
+  State<_SavedThumb> createState() => _SavedThumbState();
+}
+
+class _SavedThumbState extends State<_SavedThumb> {
+  late final Future<Uint8List?> _bytes = _load();
+
+  Future<Uint8List?> _load() async {
+    if (widget.assetId.startsWith('sample:')) return null;
+    final a = await AssetEntity.fromId(widget.assetId);
+    return a?.thumbnailDataWithSize(const ThumbnailSize(240, 420));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.assetId.startsWith('sample:')) {
+      final i = int.tryParse(widget.assetId.substring(7)) ?? 0;
+      return SceneView(scene: scenes[i % scenes.length]);
+    }
+    return FutureBuilder<Uint8List?>(
+      future: _bytes,
+      builder: (context, snap) {
+        final b = snap.data;
+        if (b == null) return const ColoredBox(color: Color(0xFFEEEDF5));
+        return Image.memory(b, fit: BoxFit.cover, gaplessPlayback: true);
+      },
     );
   }
 }

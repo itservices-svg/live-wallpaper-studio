@@ -39,21 +39,51 @@ class StillBackdrop extends StatelessWidget {
   Widget build(BuildContext context) {
     final m = state.media;
     final a = m.asset;
-    if (a == null) return SceneView(scene: state.scene);
+    if (a == null) return Framed(state: state, child: SceneView(scene: state.scene));
     final key = state.keyStill;
     if (m.isVideo && key != null) {
-      return SizedBox.expand(
-        child: Image.memory(key, fit: BoxFit.cover, gaplessPlayback: true),
+      return Framed(
+        state: state,
+        child: SizedBox.expand(
+          child: Image.memory(key, fit: BoxFit.cover, gaplessPlayback: true),
+        ),
       );
     }
-    return SizedBox.expand(
-      child: AssetEntityImage(
-        a,
-        isOriginal: false,
-        thumbnailSize: const ThumbnailSize(1080, 1920),
-        fit: BoxFit.cover,
+    return Framed(
+      state: state,
+      child: SizedBox.expand(
+        child: AssetEntityImage(
+          a,
+          isOriginal: false,
+          thumbnailSize: const ThumbnailSize(1080, 1920),
+          fit: BoxFit.cover,
+        ),
       ),
     );
+  }
+}
+
+/// Applies the user's zoom and pan (pinch in the Motion Editor) to [child].
+class Framed extends StatelessWidget {
+  const Framed({super.key, required this.state, required this.child});
+
+  final StudioState state;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final z = state.zoom;
+    if (z <= 1) return child;
+    return LayoutBuilder(builder: (context, bc) {
+      final w = bc.hasBoundedWidth ? bc.maxWidth : 0.0;
+      final h = bc.hasBoundedHeight ? bc.maxHeight : 0.0;
+      return ClipRect(
+        child: Transform.translate(
+          offset: Offset(state.panX * (z - 1) / 2 * w, state.panY * (z - 1) / 2 * h),
+          child: Transform.scale(scale: z, child: child),
+        ),
+      );
+    });
   }
 }
 
@@ -74,18 +104,23 @@ class LiveBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final m = state.media;
-    if (m.asset == null) return SceneView(scene: state.scene, animate: animate);
+    if (m.asset == null) {
+      return Framed(state: state, child: SceneView(scene: state.scene, animate: animate));
+    }
     final c = state.video;
     if (m.isVideo && showVideo && state.videoReady && c != null) {
       final size = c.value.size;
-      return ClipRect(
-        child: SizedBox.expand(
-          child: FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: size.width,
-              height: size.height,
-              child: VideoPlayer(c),
+      return Framed(
+        state: state,
+        child: ClipRect(
+          child: SizedBox.expand(
+            child: FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: size.width,
+                height: size.height,
+                child: VideoPlayer(c),
+              ),
             ),
           ),
         ),
