@@ -35,11 +35,6 @@ class WallpaperService {
           final v = f.videoPath;
           if (v == null) return const ApplyResult(false, 'Live wallpaper needs a video.');
           final themed = t == ApplyTarget.liveHome;
-          if (themed) {
-            // Lock keeps the sharp key-frame still; Home gets the blurred live video.
-            final lock = await _image(f.lockPath, fwp.WallpaperTarget.lock, '');
-            if (!lock.ok) return lock;
-          }
           // Plain live: target "both" lets Android's own chooser apply it to Home and Lock.
           var r = await fwp.FlutterWallpaperPlus.setVideoWallpaper(
             source: fwp.WallpaperSource.file(v),

@@ -17,7 +17,7 @@ class PreviewScreen extends StatefulWidget {
   State<PreviewScreen> createState() => _PreviewScreenState();
 }
 
-class _PreviewScreenState extends State<PreviewScreen> {
+class _PreviewScreenState extends State<PreviewScreen> with WidgetsBindingObserver {
   bool _holding = false;
   double _clock = 0;
   Timer? _timer;
@@ -41,9 +41,23 @@ class _PreviewScreenState extends State<PreviewScreen> {
     if (_holding) setState(() => _holding = false);
   }
 
+  // Set while we wait for the user to come back from Android's wallpaper screen.
+  Completer<void>? _returned;
+  bool _wentAway = false;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) _wentAway = true;
+    if (state == AppLifecycleState.resumed && _wentAway) {
+      final c = _returned;
+      if (c != null && !c.isCompleted) c.complete();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // The loop plays by itself on both screens.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && studio.media.isVideo) _startHold();
@@ -52,6 +66,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     studio.holdEnd();
     super.dispose();
@@ -95,9 +110,22 @@ class _PreviewScreenState extends State<PreviewScreen> {
     ApplyResult result;
     try {
       final files = await Exporter.render(s, themedVideo: target == ApplyTarget.liveHome);
+      _wentAway = false;
+      _returned = Completer<void>();
       result = s.isIOS
           ? await WallpaperService.saveToPhotos(files, name: s.themeName)
           : await WallpaperService.applyAndroid(target!, files);
+      if (result.ok && target == ApplyTarget.liveHome) {
+        // Android's screen may have applied the blurred video to Lock too. Once the
+        // user is back, put the sharp still on Lock only; Home keeps the video.
+        _toast('Choose Home (or both), tap Set, then come back here.');
+        await _returned!.future.timeout(const Duration(minutes: 3), onTimeout: () {});
+        await Future<void>.delayed(const Duration(milliseconds: 1200));
+        final lock = await WallpaperService.applyAndroid(ApplyTarget.lock, files);
+        result = lock.ok
+            ? const ApplyResult(true, 'Done: blurred live Home, sharp Lock')
+            : ApplyResult(false, lock.message);
+      }
     } catch (e) {
       result = ApplyResult(false, 'Something went wrong: $e');
     }
