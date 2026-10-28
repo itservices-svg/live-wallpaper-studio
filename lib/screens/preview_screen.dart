@@ -42,8 +42,18 @@ class _PreviewScreenState extends State<PreviewScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // The loop plays by itself on both screens.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && studio.media.isVideo) _startHold();
+    });
+  }
+
+  @override
   void dispose() {
     _timer?.cancel();
+    studio.holdEnd();
     super.dispose();
   }
 
@@ -133,21 +143,14 @@ class _PreviewScreenState extends State<PreviewScreen> {
                 Seg(
                   labels: const ['Lock Screen', 'Home Screen'],
                   index: s.side.index,
-                  onChanged: (i) {
-                    _stopHold();
-                    s.setSide(PreviewSide.values[i]);
-                  },
+                  onChanged: (i) => s.setSide(PreviewSide.values[i]),
                 ),
                 const SizedBox(height: 22),
                 Center(
                   child: CropMarks(
                     inset: 6,
-                    child: GestureDetector(
-                      onTapDown: lock ? (_) => _startHold() : null,
-                      onTapUp: lock ? (_) => _stopHold() : null,
-                      onTapCancel: lock ? _stopHold : null,
-                      onLongPressEnd: lock ? (_) => _stopHold() : null,
-                      child: PhoneBezel(
+                    child: Builder(
+                      builder: (_) => PhoneBezel(
                         glow: s.palette[0].withOpacity(0.45),
                         child: Stack(
                           children: [
@@ -161,7 +164,14 @@ class _PreviewScreenState extends State<PreviewScreen> {
                                     clockLabel: s.media.isVideo ? fmtTime(_clock) : null,
                                     tag: s.media.isVideo ? 'LIVE' : 'STILL',
                                   )
-                                : HomeScreenMock(background: StillBackdrop(state: s), state: s),
+                                : HomeScreenMock(
+                                    background: LiveBackdrop(
+                                      state: s,
+                                      showVideo: _holding,
+                                      animate: _holding,
+                                    ),
+                                    state: s,
+                                  ),
                             if (s.dimPreview)
                               Positioned.fill(
                                 child: ColoredBox(color: Colors.black.withOpacity(0.45)),
@@ -188,9 +198,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
                     Text(
                       lock
                           ? (s.media.isVideo
-                              ? 'Press and hold the screen to play · ${fmtSec(s.span)} loop'
+                              ? 'Your ${fmtSec(s.span)} loop plays on both screens'
                               : 'Still photo · no motion on this wallpaper')
-                          :'Home uses the blurred still · ${s.blur.round()} blur, ${s.dim.round()}% dim',
+                          'Blur ${s.blur.round()} · dim ${s.dim.round()}%${s.media.isVideo ? ' · video plays blurred' : ''}',
                       style: AppText.small.copyWith(fontSize: 11.5),
                     ),
                   ],

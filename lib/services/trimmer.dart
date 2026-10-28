@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:ffmpeg_kit_flutter_new_min_gpl/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_min_gpl/return_code.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../state/studio_state.dart';
 
@@ -48,8 +49,11 @@ class Trimmer {
         'crop=$w:$h,crop=${cw.toStringAsFixed(2)}:${ch.toStringAsFixed(2)}:'
         '${x.toStringAsFixed(2)}:${y.toStringAsFixed(2)},scale=$w:$h,setsar=1,fps=30$look';
     final bounce = s.loop == LoopStyle.bounce;
-    final dir = await Directory.systemTemp.createTemp('lws_v');
-    final out = '${dir.path}/live.mp4';
+    // App storage (not cache): the system keeps playing this file as the wallpaper.
+    final base0 = await getApplicationSupportDirectory();
+    final dir = await Directory('${base0.path}/wallpaper').create(recursive: true);
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final out = '${dir.path}/live_$stamp.mp4';
 
     final args = <String>[
       '-y',
@@ -70,6 +74,13 @@ class Trimmer {
       out,
     ];
     try {
+      for (final old in dir.listSync()) {
+        if (old is File && old.path != out) {
+          try {
+            old.deleteSync();
+          } catch (_) {}
+        }
+      }
       final session = await FFmpegKit.executeWithArguments(args);
       final code = await session.getReturnCode();
       if (ReturnCode.isSuccess(code) && await File(out).exists() && await File(out).length() > 0) {
