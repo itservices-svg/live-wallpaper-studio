@@ -17,8 +17,6 @@ class ExportFiles {
     required this.homePath,
     this.videoPath,
     this.trimmed = false,
-    this.lockVideo,
-    this.homeVideo,
   });
 
   final String lockPath;
@@ -28,9 +26,6 @@ class ExportFiles {
   /// True when [videoPath] is the trimmed, screen-cropped clip (not the original).
   final bool trimmed;
 
-  /// Dual live mode: sharp video for Lock and blurred video for Home.
-  final String? lockVideo;
-  final String? homeVideo;
 }
 
 /// Bakes the current theme (key frame, framing, blur, dim, tint) into PNG files
@@ -46,8 +41,7 @@ class Exporter {
     return Size(s.width.roundToDouble(), s.height.roundToDouble());
   }
 
-  /// [liveKind]: null, 'lock' (sharp video), 'home' (blurred video) or 'both' (both videos).
-  static Future<ExportFiles> render(StudioState s, {String? liveKind}) async {
+  static Future<ExportFiles> render(StudioState s) async {
     final size = _screen();
     final src = await _loadSource(s, size);
     try {
@@ -55,33 +49,18 @@ class Exporter {
       final lock = await _draw(s, src, size, home: false, file: File('${dir.path}/lock.png'));
       final home = await _draw(s, src, size, home: true, file: File('${dir.path}/home.png'));
       String? video;
-      String? lockV, homeV;
       var trimmed = false;
-      final w = size.width.round(), h = size.height.round();
       if (s.media.isVideo && s.videoPath != null) {
-        if (liveKind == 'both') {
-          lockV = await Trimmer.render(s, width: w, height: h, prefix: 'lock');
-          homeV = await Trimmer.render(s, width: w, height: h, themed: true, prefix: 'home');
-          trimmed = lockV != null && homeV != null;
-        } else if (liveKind == 'lock') {
-          lockV = await Trimmer.render(s, width: w, height: h, prefix: 'lock');
-          trimmed = lockV != null;
-        } else if (liveKind == 'home') {
-          homeV = await Trimmer.render(s, width: w, height: h, themed: true, prefix: 'home');
-          trimmed = homeV != null;
-        } else {
-          video = await Trimmer.render(s, width: w, height: h);
-          trimmed = video != null;
-          video ??= s.videoPath; // FFmpeg failed: fall back to the whole clip
-        }
+        video = await Trimmer.render(s,
+            width: size.width.round(), height: size.height.round());
+        trimmed = video != null;
+        video ??= s.videoPath; // FFmpeg failed: fall back to the whole clip
       }
       return ExportFiles(
         lockPath: lock.path,
         homePath: home.path,
         videoPath: video,
         trimmed: trimmed,
-        lockVideo: lockV,
-        homeVideo: homeV,
       );
     } finally {
       src?.dispose();
@@ -114,9 +93,11 @@ class Exporter {
 
     c.save();
     c.clipRect(rect);
-    if (home) {
-      final sigma = s.blur * 0.3 * w / kMockW;
+    final blurred = home && s.homeBlur > 0;
+    if (blurred) {
+      final sigma = s.homeBlur * 0.3 * w / kMockW;
       c.saveLayer(rect, Paint()..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma, tileMode: TileMode.clamp));
+      // slight zoom hides the soft edges the blur leaves
       c.translate(w / 2, h / 2);
       c.scale(1.15);
       c.translate(-w / 2, -h / 2);
@@ -135,16 +116,8 @@ class Exporter {
     } else {
       _drawScene(c, s, rect);
     }
-    if (home) c.restore(); // blur layer
+    if (blurred) c.restore(); // blur layer
     c.restore();
-
-    if (home) {
-      c.drawRect(rect, Paint()..color = Colors.black.withValues(alpha: s.dim / 100 * 0.8));
-      c.drawRect(
-        rect,
-        Paint()..color = s.palette[s.tintIdx].withValues(alpha: s.tint / 100 * 0.55),
-      );
-    }
 
     final pic = rec.endRecording();
     final out = await pic.toImage(w.round(), h.round());

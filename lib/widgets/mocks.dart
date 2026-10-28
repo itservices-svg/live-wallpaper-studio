@@ -134,7 +134,7 @@ class HomeScreenMock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sigma = state.blur * 0.3;
+    final sigma = state.homeBlur * 0.3;
     final icon = BoxDecoration(
       color: Colors.white.withOpacity(0.3),
       borderRadius: BorderRadius.circular(11),
@@ -146,16 +146,15 @@ class HomeScreenMock extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          ClipRect(
-            child: ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-              child: Transform.scale(scale: 1.15, child: background),
-            ),
-          ),
-          ColoredBox(color: Colors.black.withOpacity(state.dim / 100 * 0.8)),
-          ColoredBox(
-            color: state.palette[state.tintIdx].withOpacity(state.tint / 100 * 0.55),
-          ),
+          if (sigma > 0)
+            ClipRect(
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+                child: Transform.scale(scale: 1.15, child: background),
+              ),
+            )
+          else
+            background,
           Positioned(
             left: 14,
             right: 14,

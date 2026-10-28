@@ -11,8 +11,6 @@ import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 import '../data/scenes.dart';
 import '../services/library_store.dart';
 
-enum WallMode { single, theme }
-
 enum LoopStyle { once, loop, bounce }
 
 enum PreviewSide { lock, home }
@@ -40,7 +38,6 @@ class StudioState extends ChangeNotifier {
   int tab = 0;
 
   // flow
-  WallMode mode = WallMode.single;
   bool pickVideo = true;
   MediaItem media = const MediaItem('Coastline Dusk', '0:14', 0);
   String themeName = 'Coastline Dusk';
@@ -72,10 +69,10 @@ class StudioState extends ChangeNotifier {
   double panY = 0;
 
   // theme builder
+  // Photos only: soften the Home screen still. Videos are never blurred.
+  bool blurOn = true;
   double blur = 24;
-  double dim = 32;
-  double tint = 68;
-  int tintIdx = 0;
+  double get homeBlur => (media.isVideo || !blurOn) ? 0 : blur;
 
   // preview + guide
   PreviewSide side = PreviewSide.lock;
@@ -93,16 +90,11 @@ class StudioState extends ChangeNotifier {
   double get span => end - start;
   double get maxSpan => math.min(_maxLoop, sourceLen);
   double get minSpanEff => math.min(minSpan, sourceLen);
-  int get exportFiles => mode == WallMode.theme ? 2 : 1;
+  int get exportFiles => media.isVideo ? 3 : 2;
 
   // ---- navigation / flow
   void setTab(int i) {
     tab = i;
-    notifyListeners();
-  }
-
-  void setMode(WallMode m) {
-    mode = m;
     notifyListeners();
   }
 
@@ -132,7 +124,8 @@ class StudioState extends ChangeNotifier {
     _disposeVideo();
     media = m;
     themeName = m.name;
-    tintIdx = 0;
+    blurOn = true;
+    blur = 24;
     zoom = 1;
     panX = 0;
     panY = 0;
@@ -172,10 +165,8 @@ class StudioState extends ChangeNotifier {
     if (r == null) return;
     if (video) _restore = null;
     if (media.isVideo && !video) return; // wait for the clip length
-    blur = r.blur;
-    dim = r.dim;
-    tint = r.tint;
-    tintIdx = r.tintIdx;
+    blurOn = r.blur > 0;
+    if (r.blur > 0) blur = r.blur;
     zoom = r.zoom;
     panX = r.panX;
     panY = r.panY;
@@ -494,18 +485,8 @@ class StudioState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setDim(double v) {
-    dim = v;
-    notifyListeners();
-  }
-
-  void setTint(double v) {
-    tint = v;
-    notifyListeners();
-  }
-
-  void setTintIdx(int i) {
-    tintIdx = i;
+  void setBlurOn(bool v) {
+    blurOn = v;
     notifyListeners();
   }
 
@@ -521,14 +502,6 @@ class StudioState extends ChangeNotifier {
     // The key frame is re-rendered at full size, framing is applied on top.
   }
 
-  void resetTheme() {
-    blur = 24;
-    dim = 32;
-    tint = 68;
-    tintIdx = 0;
-    notifyListeners();
-  }
-
   // ---- saved themes (Recent)
   List<SavedTheme> library = const [];
 
@@ -537,18 +510,28 @@ class StudioState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> saveCurrent() async {
+  /// Adds an item to My Work (shown instantly) and writes it to disk.
+  Future<void> addWork({
+    required String kind,
+    required String file,
+    Uint8List? thumb,
+    String? idHint,
+  }) async {
+    final id = idHint ?? DateTime.now().microsecondsSinceEpoch.toString();
+    final ext = file.split('.').last;
+    final stored = await LibraryStore.copyIn(file, id, ext);
+    final thumbPath = thumb == null ? null : await LibraryStore.writeBytes(thumb, '${id}_t', 'jpg');
     final t = SavedTheme(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
-      assetId: media.asset?.id ?? 'sample:${media.sceneIndex}',
+      id: id,
+      kind: kind,
+      assetId: kind == SavedTheme.gif ? '' : (media.asset?.id ?? 'sample:${media.sceneIndex}'),
       name: themeName,
       isVideo: media.isVideo,
       duration: media.isVideo ? fmtDur(Duration(milliseconds: (span * 1000).round())) : '',
       createdMs: DateTime.now().millisecondsSinceEpoch,
-      blur: blur,
-      dim: dim,
-      tint: tint,
-      tintIdx: tintIdx,
+      file: stored,
+      thumb: thumbPath,
+      blur: homeBlur,
       start: start,
       end: end,
       key: key,
@@ -556,15 +539,23 @@ class StudioState extends ChangeNotifier {
       panX: panX,
       panY: panY,
     );
-    // Same photo/video again: update that entry instead of adding a duplicate.
-    library = [t, ...library.where((e) => e.assetId != t.assetId)].take(40).toList();
+    // Same source and kind again: replace the older entry instead of piling up copies.
+    final old = library.where((e) => e.kind == kind && kind != SavedTheme.gif && e.assetId == t.assetId).toList();
+    library = [t, ...library.where((e) => !old.contains(e))].take(200).toList();
     notifyListeners();
+    for (final o in old) {
+      await LibraryStore.deleteFiles(o);
+    }
     await LibraryStore.save(library);
   }
 
   Future<void> removeSaved(String id) async {
+    final gone = library.where((e) => e.id == id).toList();
     library = library.where((e) => e.id != id).toList();
     notifyListeners();
+    for (final g in gone) {
+      await LibraryStore.deleteFiles(g);
+    }
     await LibraryStore.save(library);
   }
 

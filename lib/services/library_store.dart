@@ -3,19 +3,20 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
-/// A theme the user finished and applied. Stored as JSON in app storage.
+/// One saved item in "My Work": a wallpaper (from a photo), a live wallpaper
+/// (from a video) or a GIF. Files live in app storage; the list is a JSON file.
 class SavedTheme {
   SavedTheme({
     required this.id,
+    required this.kind,
     required this.assetId,
     required this.name,
     required this.isVideo,
     required this.duration,
     required this.createdMs,
-    this.blur = 24,
-    this.dim = 32,
-    this.tint = 68,
-    this.tintIdx = 0,
+    required this.file,
+    this.thumb,
+    this.blur = 0,
     this.start = 0,
     this.end = 3,
     this.key = 1.5,
@@ -24,28 +25,37 @@ class SavedTheme {
     this.panY = 0,
   });
 
+  static const wallpaper = 'wallpaper';
+  static const live = 'live';
+  static const gif = 'gif';
+
   final String id;
-  final String assetId;
+  final String kind; // wallpaper | live | gif
+  final String assetId; // gallery source, used by Edit
   final String name;
   final bool isVideo;
   final String duration;
   final int createdMs;
-  final double blur, dim, tint;
-  final int tintIdx;
+  final String file; // png / mp4 / gif in app storage
+  final String? thumb; // jpg poster for live items
+  final double blur; // 0 = no blur (photos only)
   final double start, end, key;
   final double zoom, panX, panY;
 
+  bool get isGif => kind == gif;
+  bool get canEdit => kind != gif && assetId.isNotEmpty;
+
   Map<String, Object?> toJson() => {
         'id': id,
+        'kind': kind,
         'assetId': assetId,
         'name': name,
         'isVideo': isVideo,
         'duration': duration,
         'createdMs': createdMs,
+        'file': file,
+        'thumb': thumb,
         'blur': blur,
-        'dim': dim,
-        'tint': tint,
-        'tintIdx': tintIdx,
         'start': start,
         'end': end,
         'key': key,
@@ -57,19 +67,19 @@ class SavedTheme {
   static SavedTheme? fromJson(Object? o) {
     if (o is! Map) return null;
     double d(String k, double def) => (o[k] is num) ? (o[k] as num).toDouble() : def;
-    final id = o['id'], asset = o['assetId'];
-    if (id is! String || asset is! String) return null;
+    final id = o['id'], file = o['file'];
+    if (id is! String || file is! String) return null; // older entries had no files
     return SavedTheme(
       id: id,
-      assetId: asset,
-      name: (o['name'] as String?) ?? 'Theme',
+      kind: (o['kind'] as String?) ?? wallpaper,
+      assetId: (o['assetId'] as String?) ?? '',
+      name: (o['name'] as String?) ?? 'Untitled',
       isVideo: o['isVideo'] == true,
       duration: (o['duration'] as String?) ?? '',
       createdMs: (o['createdMs'] as num?)?.toInt() ?? 0,
-      blur: d('blur', 24),
-      dim: d('dim', 32),
-      tint: d('tint', 68),
-      tintIdx: (o['tintIdx'] as num?)?.toInt() ?? 0,
+      file: file,
+      thumb: o['thumb'] as String?,
+      blur: d('blur', 0),
       start: d('start', 0),
       end: d('end', 3),
       key: d('key', 1.5),
@@ -91,9 +101,39 @@ class SavedTheme {
 }
 
 class LibraryStore {
+  static Future<Directory> workDir() async {
+    final base = await getApplicationSupportDirectory();
+    return Directory('${base.path}/work').create(recursive: true);
+  }
+
+  /// Copies [src] into app storage as "<id>.<ext>" and returns the new path.
+  static Future<String> copyIn(String src, String id, String ext) async {
+    final dir = await workDir();
+    final dest = '${dir.path}/$id.$ext';
+    await File(src).copy(dest);
+    return dest;
+  }
+
+  static Future<String> writeBytes(List<int> bytes, String id, String ext) async {
+    final dir = await workDir();
+    final dest = '${dir.path}/$id.$ext';
+    await File(dest).writeAsBytes(bytes, flush: true);
+    return dest;
+  }
+
+  static Future<void> deleteFiles(SavedTheme t) async {
+    for (final p in [t.file, t.thumb]) {
+      if (p == null) continue;
+      try {
+        final f = File(p);
+        if (await f.exists()) await f.delete();
+      } catch (_) {}
+    }
+  }
+
   static Future<File> _file() async {
     final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/themes.json');
+    return File('${dir.path}/work.json');
   }
 
   static Future<List<SavedTheme>> load() async {
