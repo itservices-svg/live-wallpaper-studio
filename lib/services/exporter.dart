@@ -7,15 +7,24 @@ import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../state/studio_state.dart';
+import 'trimmer.dart';
 import '../widgets/mocks.dart' show kMockW;
 
 /// Rendered wallpaper files for the current theme.
 class ExportFiles {
-  const ExportFiles({required this.lockPath, required this.homePath, this.videoPath});
+  const ExportFiles({
+    required this.lockPath,
+    required this.homePath,
+    this.videoPath,
+    this.trimmed = false,
+  });
 
   final String lockPath;
   final String homePath;
   final String? videoPath;
+
+  /// True when [videoPath] is the trimmed, screen-cropped clip (not the original).
+  final bool trimmed;
 }
 
 /// Bakes the current theme (key frame, framing, blur, dim, tint) into PNG files
@@ -38,10 +47,18 @@ class Exporter {
       final dir = await Directory.systemTemp.createTemp('lws_');
       final lock = await _draw(s, src, size, home: false, file: File('${dir.path}/lock.png'));
       final home = await _draw(s, src, size, home: true, file: File('${dir.path}/home.png'));
+      String? video;
+      var trimmed = false;
+      if (s.media.isVideo && s.videoPath != null) {
+        video = await Trimmer.render(s, width: size.width.round(), height: size.height.round());
+        trimmed = video != null;
+        video ??= s.videoPath; // FFmpeg failed: fall back to the whole clip
+      }
       return ExportFiles(
         lockPath: lock.path,
         homePath: home.path,
-        videoPath: s.media.isVideo ? s.videoPath : null,
+        videoPath: video,
+        trimmed: trimmed,
       );
     } finally {
       src?.dispose();

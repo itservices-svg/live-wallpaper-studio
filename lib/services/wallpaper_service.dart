@@ -33,15 +33,29 @@ class WallpaperService {
         case ApplyTarget.live:
           final v = f.videoPath;
           if (v == null) return const ApplyResult(false, 'Live wallpaper needs a video.');
-          final r = await fwp.FlutterWallpaperPlus.setVideoWallpaper(
+          // Target "both" lets Android's own chooser apply it to Home and Lock.
+          var r = await fwp.FlutterWallpaperPlus.setVideoWallpaper(
             source: fwp.WallpaperSource.file(v),
-            target: fwp.WallpaperTarget.home,
+            target: fwp.WallpaperTarget.both,
             enableAudio: false,
             loop: true,
             goToHome: false,
           );
+          var note = '';
+          if (!r.success) {
+            // Some phones only allow live video on Home.
+            r = await fwp.FlutterWallpaperPlus.setVideoWallpaper(
+              source: fwp.WallpaperSource.file(v),
+              target: fwp.WallpaperTarget.home,
+              enableAudio: false,
+              loop: true,
+              goToHome: false,
+            );
+            note = ' (this phone allows live video on Home only)';
+          }
+          final cut = f.trimmed ? '' : ' Trim failed, whole clip used.';
           return r.success
-              ? const ApplyResult(true, 'Confirm in the system screen to start the live wallpaper')
+              ? ApplyResult(true, 'Confirm in the system screen to start it$note.$cut')
               : ApplyResult(false, _explain(r));
       }
     } catch (e) {

@@ -278,13 +278,14 @@ class _TargetSheet extends StatelessWidget {
             option(ApplyTarget.lock, studio.media.isVideo ? 'Key frame still' : 'Photo'),
             option(ApplyTarget.home, 'Blurred, dimmed, tinted'),
             option(ApplyTarget.both, 'Theme pair'),
-            if (canLive) option(ApplyTarget.live, 'Moving video · home · you confirm'),
+            if (canLive) option(ApplyTarget.live, 'Trimmed video · Home + Lock · you confirm'),
             if (studio.media.isVideo)
               Padding(
                 padding: const EdgeInsets.only(top: 10),
                 child: Text(
-                  'Android only allows live video on the home screen, and the whole clip loops. '
-                  'Lock screen always gets a still.',
+                  'Live wallpaper uses your trimmed loop. Android asks you to confirm and lets you '
+                  'choose Home, Lock or both; a few phones allow Home only. '
+                  'Lock / Home / Both above set still images.',
                   style: AppText.small.copyWith(fontSize: 11),
                 ),
               ),
