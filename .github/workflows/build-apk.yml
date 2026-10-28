@@ -53,7 +53,7 @@ jobs:
       - name: Build APK
         run: |
           set -o pipefail
-          flutter build apk --release 2>&1 | tee /tmp/build.log
+          flutter build apk --release --target-platform android-arm64 2>&1 | tee /tmp/build.log
 
       - uses: actions/upload-artifact@v4
         with:
