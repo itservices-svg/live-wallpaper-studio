@@ -52,6 +52,21 @@ class StudioScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _confirmDelete(BuildContext context, SavedTheme t) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: const Text('Delete this theme?'),
+        content: Text('"${t.name}" will be removed from Recent. Your photo or video is not deleted.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(d).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(d).pop(true), child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (ok == true) await studio.removeSaved(t.id);
+  }
+
   void _seeAll(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
@@ -70,7 +85,7 @@ class StudioScreen extends StatelessWidget {
             children: [
               const SizedBox(height: 14),
               const Text('All themes', style: AppText.h2),
-              Text('Tap to edit · long-press to delete', style: AppText.small),
+              Text('Tap to edit · press and hold to delete', style: AppText.small),
               const SizedBox(height: 10),
               Expanded(
                 child: studio.library.isEmpty
@@ -93,7 +108,7 @@ class StudioScreen extends StatelessWidget {
                               Navigator.of(sheet).pop();
                               _openRecent(context, t);
                             },
-                            onLongPress: () => studio.removeSaved(t.id),
+                            onLongPress: () => _confirmDelete(context, t),
                           );
                         },
                       ),
@@ -200,7 +215,7 @@ class StudioScreen extends StatelessWidget {
                             ? _RecentTile(
                                 item: studio.library[i],
                                 onTap: () => _openRecent(context, studio.library[i]),
-                                onLongPress: () => studio.removeSaved(studio.library[i].id),
+                                onLongPress: () => _confirmDelete(context, studio.library[i]),
                               )
                             : const SizedBox.shrink(),
                       ),

@@ -556,7 +556,8 @@ class StudioState extends ChangeNotifier {
       panX: panX,
       panY: panY,
     );
-    library = [t, ...library].take(40).toList();
+    // Same photo/video again: update that entry instead of adding a duplicate.
+    library = [t, ...library.where((e) => e.assetId != t.assetId)].take(40).toList();
     notifyListeners();
     await LibraryStore.save(library);
   }
