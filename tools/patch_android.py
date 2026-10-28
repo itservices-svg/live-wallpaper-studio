@@ -47,3 +47,27 @@ for line in ("android.newDsl=false", "android.builtInKotlin=false", "android.dis
         props += ("\n" if props and not props.endswith("\n") else "") + line + "\n"
 gp.write_text(props)
 print("Updated", gp)
+
+# ---- stable signing key -----------------------------------------------------
+# Without this every CI build is signed with a different random debug key, so a new
+# APK cannot be installed over an older one ("invalid package" / "app not installed").
+for name in ("build.gradle.kts",):
+    g = ANDROID / "app" / name
+    if not g.exists():
+        continue
+    src = g.read_text()
+    if 'create("lws")' not in src:
+        block = '''    signingConfigs {
+        create("lws") {
+            storeFile = rootProject.file("../tools/release.jks")
+            storePassword = "livewallpaper"
+            keyAlias = "lws"
+            keyPassword = "livewallpaper"
+        }
+    }
+
+    buildTypes {'''
+        src = src.replace("    buildTypes {", block, 1)
+        src = src.replace('signingConfigs.getByName("debug")', 'signingConfigs.getByName("lws")')
+        g.write_text(src)
+        print("Signing config added to", g)
