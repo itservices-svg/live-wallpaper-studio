@@ -7,7 +7,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'exporter.dart';
 
 /// What the user can apply. [live] is the system video-wallpaper flow.
-enum ApplyTarget { lock, home, both, live, liveLock, liveHome }
+enum ApplyTarget { lock, home, both, live, liveLock, liveHome, liveGuided }
 
 class ApplyResult {
   const ApplyResult(this.ok, this.message);
@@ -47,6 +47,7 @@ class WallpaperService {
           return const ApplyResult(true, 'Lock + Home updated');
         case ApplyTarget.liveLock:
         case ApplyTarget.liveHome:
+        case ApplyTarget.liveGuided:
           return const ApplyResult(false, 'Handled by the preview screen.');
         case ApplyTarget.live:
           final v = f.videoPath;
