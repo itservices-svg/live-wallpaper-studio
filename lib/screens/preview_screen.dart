@@ -84,7 +84,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
     _stopHold();
     ApplyResult result;
     try {
-      final files = await Exporter.render(s);
+      final files = await Exporter.render(s, themedVideo: target == ApplyTarget.liveHome);
       result = s.isIOS
           ? await WallpaperService.saveToPhotos(files, name: s.themeName)
           : await WallpaperService.applyAndroid(target!, files);
@@ -98,7 +98,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
     s.markSaved();
     await s.saveCurrent();
     await Future<void>.delayed(const Duration(milliseconds: 900));
-    if (mounted && target != ApplyTarget.live) _backToRoot(tab: s.isIOS ? 1 : 0);
+    if (mounted && target != ApplyTarget.live && target != ApplyTarget.liveHome) _backToRoot(tab: s.isIOS ? 1 : 0);
   }
 
   @override
@@ -224,6 +224,7 @@ String _targetLabel(ApplyTarget t) => switch (t) {
       ApplyTarget.home => 'Home screen',
       ApplyTarget.both => 'Lock + Home',
       ApplyTarget.live => 'Live wallpaper',
+      ApplyTarget.liveHome => 'Live + blurred Home',
     };
 
 class _TargetSheet extends StatelessWidget {
@@ -278,14 +279,14 @@ class _TargetSheet extends StatelessWidget {
             option(ApplyTarget.lock, studio.media.isVideo ? 'Key frame still' : 'Photo'),
             option(ApplyTarget.home, 'Blurred, dimmed, tinted'),
             option(ApplyTarget.both, 'Theme pair'),
-            if (canLive) option(ApplyTarget.live, 'Trimmed video · Home + Lock · you confirm'),
+            if (canLive) option(ApplyTarget.live, 'Plain video · Home + Lock'),
+            if (canLive) option(ApplyTarget.liveHome, 'Blur/dim/tint on Home · Lock sharp still'),
             if (studio.media.isVideo)
               Padding(
                 padding: const EdgeInsets.only(top: 10),
                 child: Text(
-                  'Live wallpaper uses your trimmed loop. Android asks you to confirm and lets you '
-                  'choose Home, Lock or both; a few phones allow Home only. '
-                  'Lock / Home / Both above set still images.',
+                  'Live wallpapers use your trimmed loop and Android asks you to confirm. '
+                  'Plain video has no blur. Use "Live + blurred Home" for the theme look.',
                   style: AppText.small.copyWith(fontSize: 11),
                 ),
               ),

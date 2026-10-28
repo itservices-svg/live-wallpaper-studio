@@ -10,7 +10,8 @@ import '../state/studio_state.dart';
 /// clip. Runs FFmpeg through a Flutter package: no custom native code.
 class Trimmer {
   /// Returns the new mp4 path, or null when FFmpeg failed.
-  static Future<String?> render(StudioState s, {required int width, required int height}) async {
+  static Future<String?> render(StudioState s,
+      {required int width, required int height, bool themed = false}) async {
     final src = s.videoPath;
     if (src == null) return null;
     // Even dimensions, capped so encoding stays quick.
@@ -30,7 +31,22 @@ class Trimmer {
 
     final base = 'scale=$w:$h:force_original_aspect_ratio=increase,'
         'crop=$w:$h,crop=${cw.toStringAsFixed(2)}:${ch.toStringAsFixed(2)}:'
-        '${x.toStringAsFixed(2)}:${y.toStringAsFixed(2)},scale=$w:$h,setsar=1,fps=30';
+        '${x.toStringAsFixed(2)}:${y.toStringAsFixed(2)},scale=$w:$h,setsar=1,fps=30$look';
+    var look = '';
+    if (themed) {
+      // Same look as the Home still: blur, zoom 1.15, dim, tint.
+      final sigma = (s.blur * 0.3 * w / 222).clamp(0.0, 200.0);
+      final dim = (s.dim / 100 * 0.8).toStringAsFixed(3);
+      final tint = (s.tint / 100 * 0.55).toStringAsFixed(3);
+      final c = s.palette[s.tintIdx];
+      final hex = ((c.r * 255).round() << 16 | (c.g * 255).round() << 8 | (c.b * 255).round())
+          .toRadixString(16)
+          .padLeft(6, '0');
+      look = (sigma > 0.1 ? ',gblur=sigma=${sigma.toStringAsFixed(2)}' : '') +
+          ',scale=${(w * 1.15).round()}:${(h * 1.15).round()},crop=$w:$h'
+              ',drawbox=x=0:y=0:w=iw:h=ih:color=black@$dim:t=fill'
+              ',drawbox=x=0:y=0:w=iw:h=ih:color=0x$hex@$tint:t=fill';
+    }
     final bounce = s.loop == LoopStyle.bounce;
     final dir = await Directory.systemTemp.createTemp('lws_v');
     final out = '${dir.path}/live.mp4';

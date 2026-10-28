@@ -40,7 +40,7 @@ class Exporter {
     return Size(s.width.roundToDouble(), s.height.roundToDouble());
   }
 
-  static Future<ExportFiles> render(StudioState s) async {
+  static Future<ExportFiles> render(StudioState s, {bool themedVideo = false}) async {
     final size = _screen();
     final src = await _loadSource(s, size);
     try {
@@ -50,7 +50,8 @@ class Exporter {
       String? video;
       var trimmed = false;
       if (s.media.isVideo && s.videoPath != null) {
-        video = await Trimmer.render(s, width: size.width.round(), height: size.height.round());
+        video = await Trimmer.render(s,
+            width: size.width.round(), height: size.height.round(), themed: themedVideo);
         trimmed = video != null;
         video ??= s.videoPath; // FFmpeg failed: fall back to the whole clip
       }

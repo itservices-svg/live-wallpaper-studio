@@ -267,7 +267,9 @@ class _CreateCard extends StatelessWidget {
                     ],
                   ),
                   Expanded(
-                    child: Stack(
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: Stack(
                       alignment: Alignment.center,
                       children: [
                         if (video) const Positioned(left: 0, right: 0, bottom: 2, child: _Bars()),
@@ -288,6 +290,7 @@ class _CreateCard extends StatelessWidget {
                           ),
                         ),
                       ],
+                    ),
                     ),
                   ),
                   Text(video ? 'New from video' : 'New from photo',

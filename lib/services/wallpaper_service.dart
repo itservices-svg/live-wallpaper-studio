@@ -6,7 +6,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'exporter.dart';
 
 /// What the user can apply. [live] is the system video-wallpaper flow.
-enum ApplyTarget { lock, home, both, live }
+enum ApplyTarget { lock, home, both, live, liveHome }
 
 class ApplyResult {
   const ApplyResult(this.ok, this.message);
@@ -31,18 +31,25 @@ class WallpaperService {
           if (!home.ok) return home;
           return const ApplyResult(true, 'Lock + Home updated');
         case ApplyTarget.live:
+        case ApplyTarget.liveHome:
           final v = f.videoPath;
           if (v == null) return const ApplyResult(false, 'Live wallpaper needs a video.');
-          // Target "both" lets Android's own chooser apply it to Home and Lock.
+          final themed = t == ApplyTarget.liveHome;
+          if (themed) {
+            // Lock keeps the sharp key-frame still; Home gets the blurred live video.
+            final lock = await _image(f.lockPath, fwp.WallpaperTarget.lock, '');
+            if (!lock.ok) return lock;
+          }
+          // Plain live: target "both" lets Android's own chooser apply it to Home and Lock.
           var r = await fwp.FlutterWallpaperPlus.setVideoWallpaper(
             source: fwp.WallpaperSource.file(v),
-            target: fwp.WallpaperTarget.both,
+            target: themed ? fwp.WallpaperTarget.home : fwp.WallpaperTarget.both,
             enableAudio: false,
             loop: true,
             goToHome: false,
           );
           var note = '';
-          if (!r.success) {
+          if (!r.success && !themed) {
             // Some phones only allow live video on Home.
             r = await fwp.FlutterWallpaperPlus.setVideoWallpaper(
               source: fwp.WallpaperSource.file(v),
