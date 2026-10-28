@@ -136,6 +136,18 @@ class _PreviewScreenState extends State<PreviewScreen> with WidgetsBindingObserv
     _toast(result.message);
   }
 
+  /// One wallpaper for both screens: Lock plays the sharp video, Home the blurred one.
+  Future<ApplyResult> _applySingle(ExportFiles f) async {
+    if (f.lockVideo == null || f.homeVideo == null) {
+      return const ApplyResult(false, 'Could not prepare the videos. Try a shorter clip.');
+    }
+    _toast('Choose "Home & lock screen" and tap Set, then come back.');
+    var opened = false;
+    await _waitReturn(() async => opened = await WallpaperService.openLive('studio'));
+    if (!opened) return const ApplyResult(false, 'Could not open the wallpaper screen.');
+    return const ApplyResult(true, 'Set. Lock should play the sharp video and Home the blurred one.');
+  }
+
   /// Lock video first (choose "Home & lock"), then Home video (choose "Home screen"),
   /// so Lock keeps the sharp video and Home gets the blurred one.
   Future<ApplyResult> _applyGuided(ExportFiles f) async {
@@ -177,12 +189,14 @@ class _PreviewScreenState extends State<PreviewScreen> with WidgetsBindingObserv
           ? 'lock'
           : target == ApplyTarget.liveHome
               ? 'home'
-              : target == ApplyTarget.liveGuided
+              : (target == ApplyTarget.liveGuided || target == ApplyTarget.liveSingle)
                   ? 'both'
                   : null;
       final files = await Exporter.render(s, liveKind: liveKind);
       if (liveKind == 'both') {
-        result = await _applyGuided(files);
+        result = target == ApplyTarget.liveSingle
+            ? await _applySingle(files)
+            : await _applyGuided(files);
       } else if (liveKind != null) {
         result = await _applyLive(files, lock: liveKind == 'lock');
       } else {
@@ -340,7 +354,8 @@ String _targetLabel(ApplyTarget t) => switch (t) {
       ApplyTarget.home => 'Home screen',
       ApplyTarget.both => 'Lock + Home',
       ApplyTarget.live => 'Live wallpaper',
-      ApplyTarget.liveGuided => 'Live: Lock + Home',
+      ApplyTarget.liveSingle => 'Live: Lock + Home (1 step)',
+      ApplyTarget.liveGuided => 'Live: Lock + Home (2 steps)',
       ApplyTarget.liveLock => 'Live Lock screen',
       ApplyTarget.liveHome => 'Live Home screen',
     };
@@ -397,7 +412,8 @@ class _TargetSheet extends StatelessWidget {
             option(ApplyTarget.lock, studio.media.isVideo ? 'Key frame still' : 'Photo'),
             option(ApplyTarget.home, 'Blurred, dimmed, tinted'),
             option(ApplyTarget.both, 'Theme pair'),
-            if (canLive) option(ApplyTarget.liveGuided, 'Sharp Lock + blurred Home · 2 steps'),
+            if (canLive) option(ApplyTarget.liveSingle, 'Sharp Lock + blurred Home · pick Home & lock'),
+            if (canLive) option(ApplyTarget.liveGuided, 'Same look · 2 steps, if 1 step fails'),
             if (canLive) option(ApplyTarget.liveLock, 'Sharp video · Home & lock'),
             if (canLive) option(ApplyTarget.liveHome, 'Blurred video · Home'),
             if (canLive) option(ApplyTarget.live, 'Same video on both'),

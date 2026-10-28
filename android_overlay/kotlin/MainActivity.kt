@@ -15,10 +15,10 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     // Opens Android's own "set live wallpaper" screen for our Home or Lock service.
                     "openLive" -> {
-                        val cls = if (call.argument<String>("which") == "lock") {
-                            LockWallpaperService::class.java
-                        } else {
-                            HomeWallpaperService::class.java
+                        val cls = when (call.argument<String>("which")) {
+                            "lock" -> LockWallpaperService::class.java
+                            "studio" -> StudioWallpaperService::class.java
+                            else -> HomeWallpaperService::class.java
                         }
                         try {
                             val intent = Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)

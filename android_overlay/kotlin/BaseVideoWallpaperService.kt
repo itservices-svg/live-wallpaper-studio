@@ -13,9 +13,12 @@ import java.io.File
 abstract class BaseVideoWallpaperService : WallpaperService() {
     abstract val prefix: String
 
+    /** Which video this engine plays. Subclasses may pick per engine (Home vs Lock). */
+    open fun prefixFor(engine: Engine): String = prefix
+
     override fun onCreateEngine(): Engine = VideoEngine()
 
-    private fun latestVideo(): File? {
+    private fun latestVideo(prefix: String): File? {
         val dir = File(filesDir, "wallpaper")
         val files = dir.listFiles { f -> f.name.startsWith(prefix + "_") && f.name.endsWith(".mp4") }
         return files?.maxByOrNull { it.lastModified() }
@@ -43,7 +46,7 @@ abstract class BaseVideoWallpaperService : WallpaperService() {
             visible = isVisible
             if (isVisible) {
                 // A newer video may have been written while we were hidden.
-                if (player == null || latestVideo()?.path != playingPath) {
+                if (player == null || latestVideo(prefixFor(this))?.path != playingPath) {
                     startPlayer()
                 } else {
                     try { player?.start() } catch (_: Exception) {}
@@ -55,7 +58,7 @@ abstract class BaseVideoWallpaperService : WallpaperService() {
 
         private fun startPlayer() {
             val h = holder ?: return
-            val file = latestVideo() ?: return
+            val file = latestVideo(prefixFor(this)) ?: return
             stopPlayer()
             try {
                 val p = MediaPlayer()

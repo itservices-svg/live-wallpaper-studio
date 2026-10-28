@@ -80,7 +80,8 @@ manifest = (MAIN / "AndroidManifest.xml")
 mtext = manifest.read_text()
 services = ""
 for cls, label in (("HomeWallpaperService", "Live Wallpaper Studio - Home"),
-                   ("LockWallpaperService", "Live Wallpaper Studio - Lock")):
+                   ("LockWallpaperService", "Live Wallpaper Studio - Lock"),
+                   ("StudioWallpaperService", "Live Wallpaper Studio")):
     if cls not in mtext:
         services += f'''
         <service
