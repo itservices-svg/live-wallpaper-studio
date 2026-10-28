@@ -200,7 +200,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
                           ? (s.media.isVideo
                               ? 'Your ${fmtSec(s.span)} loop plays on both screens'
                               : 'Still photo · no motion on this wallpaper')
-                          'Blur ${s.blur.round()} · dim ${s.dim.round()}%${s.media.isVideo ? ' · video plays blurred' : ''}',
+                          : 'Blur ${s.blur.round()} · dim ${s.dim.round()}%${s.media.isVideo ? ' · video plays blurred' : ''}',
                       style: AppText.small.copyWith(fontSize: 11.5),
                     ),
                   ],
