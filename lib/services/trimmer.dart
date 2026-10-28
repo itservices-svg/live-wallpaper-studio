@@ -29,9 +29,6 @@ class Trimmer {
     final x = w * (z - 1) / (2 * z) * (1 - s.panX);
     final y = h * (z - 1) / (2 * z) * (1 - s.panY);
 
-    final base = 'scale=$w:$h:force_original_aspect_ratio=increase,'
-        'crop=$w:$h,crop=${cw.toStringAsFixed(2)}:${ch.toStringAsFixed(2)}:'
-        '${x.toStringAsFixed(2)}:${y.toStringAsFixed(2)},scale=$w:$h,setsar=1,fps=30$look';
     var look = '';
     if (themed) {
       // Same look as the Home still: blur, zoom 1.15, dim, tint.
@@ -47,6 +44,9 @@ class Trimmer {
               ',drawbox=x=0:y=0:w=iw:h=ih:color=black@$dim:t=fill'
               ',drawbox=x=0:y=0:w=iw:h=ih:color=0x$hex@$tint:t=fill';
     }
+    final base = 'scale=$w:$h:force_original_aspect_ratio=increase,'
+        'crop=$w:$h,crop=${cw.toStringAsFixed(2)}:${ch.toStringAsFixed(2)}:'
+        '${x.toStringAsFixed(2)}:${y.toStringAsFixed(2)},scale=$w:$h,setsar=1,fps=30$look';
     final bounce = s.loop == LoopStyle.bounce;
     final dir = await Directory.systemTemp.createTemp('lws_v');
     final out = '${dir.path}/live.mp4';
