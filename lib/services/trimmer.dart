@@ -74,13 +74,6 @@ class Trimmer {
       out,
     ];
     try {
-      for (final old in dir.listSync()) {
-        if (old is File && old.path != out) {
-          try {
-            old.deleteSync();
-          } catch (_) {}
-        }
-      }
       final session = await FFmpegKit.executeWithArguments(args);
       final code = await session.getReturnCode();
       if (ReturnCode.isSuccess(code) && await File(out).exists() && await File(out).length() > 0) {
