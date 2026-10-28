@@ -46,7 +46,8 @@ class Exporter {
     return Size(s.width.roundToDouble(), s.height.roundToDouble());
   }
 
-  static Future<ExportFiles> render(StudioState s, {bool dualVideo = false}) async {
+  /// [liveKind]: null, 'lock' (sharp video) or 'home' (blurred video).
+  static Future<ExportFiles> render(StudioState s, {String? liveKind}) async {
     final size = _screen();
     final src = await _loadSource(s, size);
     try {
@@ -58,10 +59,12 @@ class Exporter {
       var trimmed = false;
       final w = size.width.round(), h = size.height.round();
       if (s.media.isVideo && s.videoPath != null) {
-        if (dualVideo) {
+        if (liveKind == 'lock') {
           lockV = await Trimmer.render(s, width: w, height: h, prefix: 'lock');
+          trimmed = lockV != null;
+        } else if (liveKind == 'home') {
           homeV = await Trimmer.render(s, width: w, height: h, themed: true, prefix: 'home');
-          trimmed = lockV != null && homeV != null;
+          trimmed = homeV != null;
         } else {
           video = await Trimmer.render(s, width: w, height: h);
           trimmed = video != null;

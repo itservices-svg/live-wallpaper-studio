@@ -7,7 +7,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'exporter.dart';
 
 /// What the user can apply. [live] is the system video-wallpaper flow.
-enum ApplyTarget { lock, home, both, live, liveDual }
+enum ApplyTarget { lock, home, both, live, liveLock, liveHome }
 
 class ApplyResult {
   const ApplyResult(this.ok, this.message);
@@ -45,8 +45,9 @@ class WallpaperService {
           final home = await _image(f.homePath, fwp.WallpaperTarget.home, '');
           if (!home.ok) return home;
           return const ApplyResult(true, 'Lock + Home updated');
-        case ApplyTarget.liveDual:
-          return const ApplyResult(false, 'Use the two-step live flow.');
+        case ApplyTarget.liveLock:
+        case ApplyTarget.liveHome:
+          return const ApplyResult(false, 'Handled by the preview screen.');
         case ApplyTarget.live:
           final v = f.videoPath;
           if (v == null) return const ApplyResult(false, 'Live wallpaper needs a video.');
