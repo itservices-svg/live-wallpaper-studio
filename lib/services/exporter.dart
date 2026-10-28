@@ -17,6 +17,8 @@ class ExportFiles {
     required this.homePath,
     this.videoPath,
     this.trimmed = false,
+    this.lockVideo,
+    this.homeVideo,
   });
 
   final String lockPath;
@@ -25,6 +27,10 @@ class ExportFiles {
 
   /// True when [videoPath] is the trimmed, screen-cropped clip (not the original).
   final bool trimmed;
+
+  /// Dual live mode: sharp video for Lock and blurred video for Home.
+  final String? lockVideo;
+  final String? homeVideo;
 }
 
 /// Bakes the current theme (key frame, framing, blur, dim, tint) into PNG files
@@ -40,7 +46,7 @@ class Exporter {
     return Size(s.width.roundToDouble(), s.height.roundToDouble());
   }
 
-  static Future<ExportFiles> render(StudioState s, {bool themedVideo = false}) async {
+  static Future<ExportFiles> render(StudioState s, {bool dualVideo = false}) async {
     final size = _screen();
     final src = await _loadSource(s, size);
     try {
@@ -48,18 +54,27 @@ class Exporter {
       final lock = await _draw(s, src, size, home: false, file: File('${dir.path}/lock.png'));
       final home = await _draw(s, src, size, home: true, file: File('${dir.path}/home.png'));
       String? video;
+      String? lockV, homeV;
       var trimmed = false;
+      final w = size.width.round(), h = size.height.round();
       if (s.media.isVideo && s.videoPath != null) {
-        video = await Trimmer.render(s,
-            width: size.width.round(), height: size.height.round(), themed: themedVideo);
-        trimmed = video != null;
-        video ??= s.videoPath; // FFmpeg failed: fall back to the whole clip
+        if (dualVideo) {
+          lockV = await Trimmer.render(s, width: w, height: h, prefix: 'lock');
+          homeV = await Trimmer.render(s, width: w, height: h, themed: true, prefix: 'home');
+          trimmed = lockV != null && homeV != null;
+        } else {
+          video = await Trimmer.render(s, width: w, height: h);
+          trimmed = video != null;
+          video ??= s.videoPath; // FFmpeg failed: fall back to the whole clip
+        }
       }
       return ExportFiles(
         lockPath: lock.path,
         homePath: home.path,
         videoPath: video,
         trimmed: trimmed,
+        lockVideo: lockV,
+        homeVideo: homeV,
       );
     } finally {
       src?.dispose();

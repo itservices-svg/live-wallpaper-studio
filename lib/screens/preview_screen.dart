@@ -89,6 +89,28 @@ class _PreviewScreenState extends State<PreviewScreen> with WidgetsBindingObserv
 
   bool _busy = false;
 
+  Future<void> _waitReturn(Future<bool> Function() open) async {
+    _wentAway = false;
+    _returned = Completer<void>();
+    final ok = await open();
+    if (!ok) return;
+    await _returned!.future.timeout(const Duration(minutes: 3), onTimeout: () {});
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+  }
+
+  /// Two Android screens in a row: first the Lock video, then the Home video.
+  Future<ApplyResult> _applyDual(ExportFiles f) async {
+    if (f.lockVideo == null || f.homeVideo == null) {
+      return const ApplyResult(false, 'Could not prepare the videos. Try a shorter clip.');
+    }
+    _toast('Step 1 of 2: choose LOCK screen only, tap Set, then come back.');
+    await _waitReturn(() => WallpaperService.openLive('lock'));
+    if (!mounted) return const ApplyResult(false, '');
+    _toast('Step 2 of 2: choose HOME screen only, tap Set.');
+    await _waitReturn(() => WallpaperService.openLive('home'));
+    return const ApplyResult(true, 'Done: sharp video on Lock, blurred video on Home');
+  }
+
   Future<void> _save() async {
     if (_busy) return;
     final s = studio;
@@ -109,22 +131,13 @@ class _PreviewScreenState extends State<PreviewScreen> with WidgetsBindingObserv
     _stopHold();
     ApplyResult result;
     try {
-      final files = await Exporter.render(s, themedVideo: target == ApplyTarget.liveHome);
-      _wentAway = false;
-      _returned = Completer<void>();
-      result = s.isIOS
-          ? await WallpaperService.saveToPhotos(files, name: s.themeName)
-          : await WallpaperService.applyAndroid(target!, files);
-      if (result.ok && target == ApplyTarget.liveHome) {
-        // Android's screen may have applied the blurred video to Lock too. Once the
-        // user is back, put the sharp still on Lock only; Home keeps the video.
-        _toast('Choose Home (or both), tap Set, then come back here.');
-        await _returned!.future.timeout(const Duration(minutes: 3), onTimeout: () {});
-        await Future<void>.delayed(const Duration(milliseconds: 1200));
-        final lock = await WallpaperService.applyAndroid(ApplyTarget.lock, files);
-        result = lock.ok
-            ? const ApplyResult(true, 'Done: blurred live Home, sharp Lock')
-            : ApplyResult(false, lock.message);
+      final files = await Exporter.render(s, dualVideo: target == ApplyTarget.liveDual);
+      if (target == ApplyTarget.liveDual) {
+        result = await _applyDual(files);
+      } else {
+        result = s.isIOS
+            ? await WallpaperService.saveToPhotos(files, name: s.themeName)
+            : await WallpaperService.applyAndroid(target!, files);
       }
     } catch (e) {
       result = ApplyResult(false, 'Something went wrong: $e');
@@ -136,7 +149,7 @@ class _PreviewScreenState extends State<PreviewScreen> with WidgetsBindingObserv
     s.markSaved();
     await s.saveCurrent();
     await Future<void>.delayed(const Duration(milliseconds: 900));
-    if (mounted && target != ApplyTarget.live && target != ApplyTarget.liveHome) _backToRoot(tab: s.isIOS ? 1 : 0);
+    if (mounted && target != ApplyTarget.live && target != ApplyTarget.liveDual) _backToRoot(tab: s.isIOS ? 1 : 0);
   }
 
   @override
@@ -262,7 +275,7 @@ String _targetLabel(ApplyTarget t) => switch (t) {
       ApplyTarget.home => 'Home screen',
       ApplyTarget.both => 'Lock + Home',
       ApplyTarget.live => 'Live wallpaper',
-      ApplyTarget.liveHome => 'Live + blurred Home',
+      ApplyTarget.liveDual => 'Live: Lock + Home',
     };
 
 class _TargetSheet extends StatelessWidget {
@@ -317,14 +330,14 @@ class _TargetSheet extends StatelessWidget {
             option(ApplyTarget.lock, studio.media.isVideo ? 'Key frame still' : 'Photo'),
             option(ApplyTarget.home, 'Blurred, dimmed, tinted'),
             option(ApplyTarget.both, 'Theme pair'),
-            if (canLive) option(ApplyTarget.live, 'Plain video · Home + Lock'),
-            if (canLive) option(ApplyTarget.liveHome, 'Blur/dim/tint on Home · Lock sharp still'),
+            if (canLive) option(ApplyTarget.live, 'Same video on both'),
+            if (canLive) option(ApplyTarget.liveDual, 'Lock sharp video · Home blurred video'),
             if (studio.media.isVideo)
               Padding(
                 padding: const EdgeInsets.only(top: 10),
                 child: Text(
                   'Live wallpapers use your trimmed loop and Android asks you to confirm. '
-                  'Plain video has no blur. Use "Live + blurred Home" for the theme look.',
+                  '"Lock sharp video · Home blurred video" takes two quick steps on Android.',
                   style: AppText.small.copyWith(fontSize: 11),
                 ),
               ),

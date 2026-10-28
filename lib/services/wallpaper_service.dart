@@ -1,12 +1,13 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_wallpaper_plus/flutter_wallpaper_plus.dart' as fwp;
 import 'package:photo_manager/photo_manager.dart';
 
 import 'exporter.dart';
 
 /// What the user can apply. [live] is the system video-wallpaper flow.
-enum ApplyTarget { lock, home, both, live, liveHome }
+enum ApplyTarget { lock, home, both, live, liveDual }
 
 class ApplyResult {
   const ApplyResult(this.ok, this.message);
@@ -17,6 +18,20 @@ class ApplyResult {
 /// Sets wallpapers through the flutter_wallpaper_plus package (Android) and
 /// saves to the photo library on iOS, where apps cannot set wallpapers.
 class WallpaperService {
+  static const MethodChannel _native = MethodChannel('live_wallpaper_studio/native');
+
+  /// Opens Android's "set live wallpaper" screen for this app's own Lock or Home
+  /// video service. [which] is 'lock' or 'home'.
+  static Future<bool> openLive(String which) async {
+    try {
+      return (await _native.invokeMethod<bool>('openLive', {'which': which})) ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   static Future<ApplyResult> applyAndroid(ApplyTarget t, ExportFiles f) async {
     try {
       switch (t) {
@@ -30,11 +45,12 @@ class WallpaperService {
           final home = await _image(f.homePath, fwp.WallpaperTarget.home, '');
           if (!home.ok) return home;
           return const ApplyResult(true, 'Lock + Home updated');
+        case ApplyTarget.liveDual:
+          return const ApplyResult(false, 'Use the two-step live flow.');
         case ApplyTarget.live:
-        case ApplyTarget.liveHome:
           final v = f.videoPath;
           if (v == null) return const ApplyResult(false, 'Live wallpaper needs a video.');
-          final themed = t == ApplyTarget.liveHome;
+          const themed = false;
           // Plain live: target "both" lets Android's own chooser apply it to Home and Lock.
           var r = await fwp.FlutterWallpaperPlus.setVideoWallpaper(
             source: fwp.WallpaperSource.file(v),

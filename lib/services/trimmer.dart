@@ -12,7 +12,7 @@ import '../state/studio_state.dart';
 class Trimmer {
   /// Returns the new mp4 path, or null when FFmpeg failed.
   static Future<String?> render(StudioState s,
-      {required int width, required int height, bool themed = false}) async {
+      {required int width, required int height, bool themed = false, String prefix = 'live'}) async {
     final src = s.videoPath;
     if (src == null) return null;
     // Even dimensions, capped so encoding stays quick.
@@ -53,7 +53,7 @@ class Trimmer {
     final base0 = await getApplicationSupportDirectory();
     final dir = await Directory('${base0.path}/wallpaper').create(recursive: true);
     final stamp = DateTime.now().millisecondsSinceEpoch;
-    final out = '${dir.path}/live_$stamp.mp4';
+    final out = '${dir.path}/${prefix}_$stamp.mp4';
 
     final args = <String>[
       '-y',
