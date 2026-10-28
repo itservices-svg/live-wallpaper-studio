@@ -17,6 +17,7 @@ perms = [
     '<uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>',
     '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>',
     '<uses-permission android:name="android.permission.SET_WALLPAPER"/>',
+    '<uses-permission android:name="android.permission.INTERNET"/>',
 ]
 missing = [p for p in perms if p.split('"')[1] not in text]
 if missing:

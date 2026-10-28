@@ -98,7 +98,7 @@ class StudioScreen extends StatelessWidget {
                   const Spacer(),
                   if (studio.library.isNotEmpty)
                     GestureDetector(
-                      onTap: () => studio.setTab(1),
+                      onTap: () => studio.setTab(2),
                       behavior: HitTestBehavior.opaque,
                       child: const Padding(
                         padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),

@@ -340,7 +340,7 @@ class FloatingTabBar extends StatelessWidget {
         onTap: () => onChanged(i),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 11),
           decoration: BoxDecoration(
             color: on ? Colors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(26),
@@ -380,8 +380,9 @@ class FloatingTabBar extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           item(0, Icons.home_outlined, 'Studio'),
-          item(1, Icons.collections_outlined, 'My Work'),
-          item(2, Icons.school_outlined, 'Guide'),
+          item(1, Icons.explore_outlined, 'Explore'),
+          item(2, Icons.collections_outlined, 'My Work'),
+          item(3, Icons.school_outlined, 'Guide'),
         ],
       ),
     );

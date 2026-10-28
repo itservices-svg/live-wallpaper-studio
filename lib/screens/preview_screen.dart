@@ -71,7 +71,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
   }
 
   void _goMyWork() {
-    studio.setTab(1);
+    studio.setTab(2);
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
 

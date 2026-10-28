@@ -51,9 +51,12 @@ jobs:
         run: flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee /tmp/analyze.log || true
 
       - name: Build APK
+        env:
+          PIXABAY_KEY: ${{ secrets.PIXABAY_KEY }}
         run: |
+          if [ -z "$PIXABAY_KEY" ]; then echo "PIXABAY_KEY secret is EMPTY"; else echo "PIXABAY_KEY secret is set (${#PIXABAY_KEY} chars)"; fi
           set -o pipefail
-          flutter build apk --release --target-platform android-arm64 2>&1 | tee /tmp/build.log
+          flutter build apk --release --target-platform android-arm64 --dart-define=PIXABAY_KEY="$PIXABAY_KEY" 2>&1 | tee /tmp/build.log
 
       - uses: actions/upload-artifact@v4
         with:

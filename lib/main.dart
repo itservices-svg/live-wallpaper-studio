@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'screens/explore_screen.dart';
 import 'screens/my_work_screen.dart';
 import 'screens/setup_guide_screen.dart';
 import 'screens/studio_screen.dart';
@@ -54,7 +55,7 @@ class HomeShell extends StatelessWidget {
             children: [
               IndexedStack(
                 index: studio.tab,
-                children: const [StudioScreen(), MyWorkScreen(), SetupGuideScreen()],
+                children: const [StudioScreen(), ExploreScreen(), MyWorkScreen(), SetupGuideScreen()],
               ),
               Positioned(
                 left: 0,
