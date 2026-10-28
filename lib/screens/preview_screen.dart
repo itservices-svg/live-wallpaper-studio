@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/exporter.dart';
+import '../services/trimmer.dart';
 import '../services/wallpaper_service.dart';
 import '../state/studio_state.dart';
 import '../theme.dart';
@@ -111,6 +112,28 @@ class _PreviewScreenState extends State<PreviewScreen> with WidgetsBindingObserv
     await _waitReturn(() async => opened = await WallpaperService.openLive(lock ? 'lock' : 'home'));
     if (!opened) return const ApplyResult(false, 'Could not open the wallpaper screen.');
     return ApplyResult(true, lock ? 'Sharp live video set for Lock' : 'Blurred live video set for Home');
+  }
+
+  /// Renders the trimmed loop (sharp, with framing) as a GIF and saves it to the gallery.
+  Future<void> _saveGif() async {
+    if (_busy) return;
+    final s = studio;
+    setState(() => _busy = true);
+    ApplyResult result;
+    try {
+      final size = MediaQuery.of(context).size;
+      final mp4 = await Trimmer.render(s,
+          width: 720, height: (720 * size.height / size.width).round(), prefix: 'gifsrc');
+      final gif = mp4 == null ? null : await Trimmer.toGif(mp4);
+      result = gif == null
+          ? const ApplyResult(false, 'Could not make the GIF. Try a shorter clip.')
+          : await WallpaperService.saveGif(gif, name: s.themeName);
+    } catch (e) {
+      result = ApplyResult(false, 'Something went wrong: $e');
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    _toast(result.message);
   }
 
   Future<void> _save() async {
@@ -268,6 +291,20 @@ class _PreviewScreenState extends State<PreviewScreen> with WidgetsBindingObserv
                     sub: s.isIOS ? '${s.exportFiles} ${s.exportFiles == 1 ? 'file' : 'files'}' : null,
                     onTap: _save,
                   ),
+                if (!_busy && s.media.isVideo && s.videoPath != null) ...[
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: _saveGif,
+                    icon: const Icon(Icons.gif_box_outlined, size: 20),
+                    label: const Text('Save loop as GIF'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.ink,
+                      side: const BorderSide(color: AppColors.line),
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

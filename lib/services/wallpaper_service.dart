@@ -119,4 +119,20 @@ class WallpaperService {
       return ApplyResult(false, 'Could not save: $e');
     }
   }
+
+  /// Saves a GIF into the phone's gallery (Pictures), so it shows in Photos/Downloads apps.
+  static Future<ApplyResult> saveGif(String path, {required String name}) async {
+    try {
+      final perm = await PhotoManager.requestPermissionExtend();
+      if (!perm.hasAccess) return const ApplyResult(false, 'Allow Photos access to save the GIF.');
+      final safe = name.replaceAll(RegExp(r'[^\w\- ]'), '').trim();
+      final entity = await PhotoManager.editor.saveImageWithPath(
+        path,
+        title: '${safe.isEmpty ? 'loop' : safe}.gif',
+      );
+      return ApplyResult(true, 'GIF saved to your gallery (${entity.title ?? 'gif'})');
+    } catch (e) {
+      return ApplyResult(false, 'Could not save the GIF: $e');
+    }
+  }
 }

@@ -82,4 +82,28 @@ class Trimmer {
     } catch (_) {}
     return null;
   }
+
+  /// Converts a rendered mp4 into a looping GIF (palette-optimised). Null on failure.
+  static Future<String?> toGif(String mp4, {int width = 480, int fps = 15}) async {
+    final base = await getTemporaryDirectory();
+    final dir = await Directory('${base.path}/gif').create(recursive: true);
+    final out = '${dir.path}/loop_${DateTime.now().millisecondsSinceEpoch}.gif';
+    final args = <String>[
+      '-y',
+      '-i', mp4,
+      '-vf',
+      'fps=$fps,scale=$width:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];'
+          '[b][p]paletteuse=dither=bayer:bayer_scale=4',
+      '-loop', '0',
+      out,
+    ];
+    try {
+      final session = await FFmpegKit.executeWithArguments(args);
+      final code = await session.getReturnCode();
+      if (ReturnCode.isSuccess(code) && await File(out).exists() && await File(out).length() > 0) {
+        return out;
+      }
+    } catch (_) {}
+    return null;
+  }
 }
