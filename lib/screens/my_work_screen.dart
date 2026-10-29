@@ -10,6 +10,7 @@ import '../state/studio_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/work_thumb.dart';
+import 'gif_editor_screen.dart';
 import 'studio_screen.dart';
 
 /// Everything the user made, by category. Updates the moment anything is added,
@@ -254,6 +255,11 @@ class _WorkViewerState extends State<WorkViewer> {
     final nav = Navigator.of(context);
     nav.pop();
     studio.setTab(0);
+    if (item.isGif) {
+      await nav.push(MaterialPageRoute(
+          builder: (_) => GifEditorScreen(project: item.proj, replaceId: item.id)));
+      return;
+    }
     await openWorkForEdit(nav.context, item);
   }
 
@@ -323,7 +329,7 @@ class _WorkViewerState extends State<WorkViewer> {
               children: [
                 action(Icons.share_outlined, 'Share', _share),
                 action(Icons.download_outlined, 'Download', _download),
-                if (item.canEdit) action(Icons.edit_outlined, 'Edit', _edit),
+                if (item.canEdit || item.canEditGif) action(Icons.edit_outlined, 'Edit', _edit),
                 action(Icons.delete_outline, 'Delete', _delete),
               ],
             ),

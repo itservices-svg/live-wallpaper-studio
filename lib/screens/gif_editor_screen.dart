@@ -1,26 +1,32 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:ffmpeg_kit_flutter_new_min_gpl/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_min_gpl/return_code.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 
 import '../data/scenes.dart';
+import '../services/gif_art.dart';
 import '../services/library_store.dart';
 import '../state/studio_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/frame_painter.dart';
+import 'explore_screen.dart';
 import 'pick_media_screen.dart';
 import 'preview_screen.dart' show kGifPresets;
 
 /// One video in the GIF, with the part of it that is used.
 class _Clip {
-  _Clip(this.path, this.name, this.length, this.size) {
+  _Clip(this.path, this.name, this.length, this.size, this.assetId) {
     end = math.min(length, 4.0);
   }
 
@@ -28,6 +34,7 @@ class _Clip {
   final String name;
   final double length; // seconds
   final Size size;
+  final String? assetId; // gallery id, so the clip can be found again when editing
   double start = 0;
   late double end;
   List<Uint8List?> strip = List<Uint8List?>.filled(8, null);
@@ -45,7 +52,14 @@ const _shapes = <(String, double)>[
 
 /// Make a GIF from one or more videos: pick the part of each, crop, size, and join.
 class GifEditorScreen extends StatefulWidget {
-  const GifEditorScreen({super.key});
+  /// [project]: saved GIF project JSON to edit again; [replaceId]: the saved GIF it replaces.
+  /// [initialClip] / [initialArt]: start with this video, or this picture around the frame.
+  const GifEditorScreen({super.key, this.project, this.replaceId, this.initialClip, this.initialArt});
+
+  final String? project;
+  final String? replaceId;
+  final MediaItem? initialClip;
+  final String? initialArt;
 
   @override
   State<GifEditorScreen> createState() => _GifEditorScreenState();
@@ -64,11 +78,22 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
   bool _busy = false;
   bool _adding = false;
 
+  FrameShape _fshape = FrameShape.none;
+  double _pad = 0.12;
+  int _border = 0;
+  int _bg = 0;
+  String? _artPath;
+  ui.Image? _artImg;
+  List<File> _arts = [];
+
+  FrameStyle get _style =>
+      FrameStyle(shape: _fshape, pad: _pad, border: _border, bg: _bg, art: _artImg);
+
   @override
   void initState() {
     super.initState();
-    // Ask for the first video straight away.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _addClip(first: true));
+    _loadArts();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _boot());
   }
 
   @override
@@ -96,32 +121,173 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
       ..showSnackBar(SnackBar(content: Text(m), behavior: SnackBarBehavior.floating));
   }
 
+  Future<void> _boot() async {
+    final proj = widget.project;
+    if (proj != null) {
+      await _restore(proj);
+      return;
+    }
+    if (widget.initialArt != null) {
+      await _setArt(widget.initialArt);
+      _fshape = FrameShape.round;
+      _shape = 1;
+      if (mounted) setState(() {});
+      _loadArts();
+    }
+    final first = widget.initialClip;
+    if (first != null) {
+      await _addItem(first);
+      return;
+    }
+    await _addClip(first: true);
+  }
+
+  Future<void> _loadArts() async {
+    final list = await GifArt.list();
+    if (mounted) setState(() => _arts = list);
+  }
+
+  Future<void> _setArt(String? path) async {
+    if (path == null) {
+      _artPath = null;
+      _artImg = null;
+      if (mounted) setState(() {});
+      return;
+    }
+    try {
+      final bytes = await File(path).readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes, targetWidth: 720);
+      final frame = await codec.getNextFrame();
+      codec.dispose();
+      _artImg = frame.image;
+      _artPath = path;
+    } catch (_) {
+      _artImg = null;
+      _artPath = null;
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// Asks where a picture or video comes from. Returns 'gallery', 'explore' or null.
+  Future<String?> _chooseSource({required String title, required String exploreLabel}) {
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (c) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 16, 8, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                child: Text(title, style: AppText.h2),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('From gallery'),
+                onTap: () => Navigator.pop(c, 'gallery'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.explore_outlined),
+                title: Text(exploreLabel),
+                onTap: () => Navigator.pop(c, 'explore'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _itemPath(MediaItem item) async {
+    if (item.asset != null) return (await item.asset!.file)?.path;
+    return item.file;
+  }
+
   Future<void> _addClip({bool first = false}) async {
     if (_adding || _busy) return;
     _adding = true;
     try {
-      studio.openPicker(video: true);
-      final MediaItem? item = await Navigator.of(context)
-          .push<MediaItem>(MaterialPageRoute(builder: (_) => const PickMediaScreen(forGif: true)));
+      final src = await _chooseSource(title: 'Add a video', exploreLabel: 'From Explore (free videos)');
+      MediaItem? item;
+      if (src == 'gallery') {
+        studio.openPicker(video: true);
+        if (!mounted) return;
+        item = await Navigator.of(context).push<MediaItem>(
+            MaterialPageRoute(builder: (_) => const PickMediaScreen(forGif: true)));
+      } else if (src == 'explore') {
+        if (!mounted) return;
+        item = await Navigator.of(context).push<MediaItem>(MaterialPageRoute(
+            builder: (_) => const ExploreScreen(allowed: [1], title: 'Pick a video')));
+      }
       if (item == null) {
         if (first && _clips.isEmpty && mounted) Navigator.of(context).pop();
         return;
       }
-      String? path;
-      if (item.asset != null) {
-        final f = await item.asset!.file;
-        path = f?.path;
-      } else {
-        path = item.file;
+      await _addItem(item);
+    } finally {
+      _adding = false;
+    }
+  }
+
+  Future<void> _addItem(MediaItem item) async {
+    final path = await _itemPath(item);
+    if (path == null) {
+      _toast('This clip is not available. Pick a video from your gallery.');
+      return;
+    }
+    await _attach(path, item.name, item.asset?.id);
+  }
+
+  Future<void> _addArt() async {
+    if (_adding || _busy) return;
+    _adding = true;
+    try {
+      final src = await _chooseSource(
+          title: 'Add a picture around the frame',
+          exploreLabel: 'From Explore (vectors, frames, illustrations)');
+      MediaItem? item;
+      if (src == 'gallery') {
+        studio.openPicker(video: false);
+        if (!mounted) return;
+        item = await Navigator.of(context).push<MediaItem>(
+            MaterialPageRoute(builder: (_) => const PickMediaScreen(forGif: true, photos: true)));
+      } else if (src == 'explore') {
+        if (!mounted) return;
+        item = await Navigator.of(context).push<MediaItem>(MaterialPageRoute(
+            builder: (_) => const ExploreScreen(allowed: [2, 3, 4, 0], title: 'Pick a picture')));
       }
+      if (item == null) return;
+      final path = await _itemPath(item);
       if (path == null) {
-        _toast('This clip is not available. Pick a video from your gallery.');
+        _toast('This picture is not available.');
         return;
       }
+      final stored = await GifArt.add(path);
+      await _setArt(stored);
+      await _loadArts();
+    } catch (e) {
+      if (mounted) _toast('Could not add the picture: $e');
+    } finally {
+      _adding = false;
+    }
+  }
+
+  /// Opens [path] as a new clip and makes it the one being edited.
+  Future<void> _attach(String path, String name, String? assetId,
+      {double? start, double? end}) async {
+    try {
       final c = VideoPlayerController.file(File(path));
       await c.initialize();
       final len = c.value.duration.inMilliseconds / 1000.0;
-      final clip = _Clip(path, item.name, len, c.value.size);
+      final clip = _Clip(path, name, len, c.value.size, assetId);
+      if (start != null) clip.start = start.clamp(0.0, len).toDouble();
+      if (end != null) clip.end = end.clamp(clip.start, len).toDouble();
       await c.setVolume(0);
       if (!mounted) {
         await c.dispose();
@@ -137,10 +303,77 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
       unawaited(_loadStrip(clip));
     } catch (e) {
       if (mounted) _toast('Could not open that video: $e');
-    } finally {
-      _adding = false;
     }
   }
+
+  Future<void> _restore(String json) async {
+    try {
+      final j = jsonDecode(json) as Map<String, dynamic>;
+      int i(String k, int def, int max) => ((j[k] as num?)?.toInt() ?? def).clamp(0, max).toInt();
+      double d(String k, double def) => (j[k] as num?)?.toDouble() ?? def;
+      _shape = i('crop', 0, _shapes.length - 1);
+      _quality = i('q', 1, kGifPresets.length - 1);
+      _zoom = d('z', 1).clamp(1.0, 3.0).toDouble();
+      _panX = d('px', 0).clamp(-1.0, 1.0).toDouble();
+      _panY = d('py', 0).clamp(-1.0, 1.0).toDouble();
+      _fshape = FrameShape.values[i('f', 0, FrameShape.values.length - 1)];
+      _pad = d('pad', 0.12).clamp(0.02, 0.3).toDouble();
+      _border = i('b', 0, kFrameBorders.length - 1);
+      _bg = i('bg', 0, kFrameBgs.length - 1);
+      final art = j['art'] as String?;
+      if (art != null && await File(art).exists()) await _setArt(art);
+      if (mounted) setState(() {});
+
+      var missing = 0;
+      for (final c in (j['clips'] as List? ?? const [])) {
+        final m = c as Map;
+        final a = m['a'] as String?;
+        String? path;
+        if (a != null && a.isNotEmpty) {
+          final ent = await AssetEntity.fromId(a);
+          path = (await ent?.file)?.path;
+        }
+        path ??= m['p'] as String?;
+        if (path == null || !await File(path).exists()) {
+          missing++;
+          continue;
+        }
+        await _attach(path, (m['n'] as String?) ?? 'Clip', a,
+            start: (m['s'] as num?)?.toDouble(), end: (m['e'] as num?)?.toDouble());
+      }
+      if (!mounted) return;
+      if (_clips.isEmpty) {
+        _toast('The videos of this GIF are no longer available.');
+        Navigator.of(context).pop();
+        return;
+      }
+      if (missing > 0) _toast('$missing video(s) are no longer available and were skipped.');
+      await _select(0);
+    } catch (e) {
+      if (mounted) {
+        _toast('Could not open this GIF for editing.');
+        Navigator.of(context).pop();
+      }
+    }
+  }
+
+  String _projectJson() => jsonEncode({
+        'v': 1,
+        'clips': [
+          for (final c in _clips)
+            {'a': c.assetId, 'p': c.path, 'n': c.name, 's': c.start, 'e': c.end},
+        ],
+        'crop': _shape,
+        'q': _quality,
+        'z': _zoom,
+        'px': _panX,
+        'py': _panY,
+        'f': _fshape.index,
+        'pad': _pad,
+        'b': _border,
+        'bg': _bg,
+        'art': _artPath,
+      });
 
   Future<void> _select(int i) async {
     if (i == _sel || i < 0 || i >= _clips.length) return;
@@ -284,14 +517,40 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
           '-i', c.path,
         ]);
       }
-      final head = [for (var i = 0; i < n; i++) '[$i:v]$vf[v$i]'].join(';');
-      final ins = [for (var i = 0; i < n; i++) '[v$i]'].join();
-      final join = n == 1 ? '[v0]split[a][b]' : '${ins}concat=n=$n:v=1:a=0[c];[c]split[a][b]';
-      final fc = '$head;$join;[a]palettegen=max_colors=256:stats_mode=diff[p];'
-          '[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle[o]';
-
       final base = await getTemporaryDirectory();
       final dir = await Directory('${base.path}/gif').create(recursive: true);
+
+      // Frame: a transparent-centre picture (outside of the shape + border) laid over the video.
+      String? overlayPath;
+      if (_style.active) {
+        final rec = ui.PictureRecorder();
+        FramePainter(_style).paint(Canvas(rec), Size(w.toDouble(), h.toDouble()));
+        final img = await rec.endRecording().toImage(w, h);
+        final data = await img.toByteData(format: ui.ImageByteFormat.png);
+        img.dispose();
+        if (data == null) throw Exception('could not draw the frame');
+        overlayPath = '${dir.path}/frame_${DateTime.now().millisecondsSinceEpoch}.png';
+        await File(overlayPath).writeAsBytes(data.buffer.asUint8List(), flush: true);
+        args.addAll(['-i', overlayPath]);
+      }
+
+      final parts = <String>[for (var i = 0; i < n; i++) '[$i:v]$vf[v$i]'];
+      var last = '[v0]';
+      if (n > 1) {
+        final ins = [for (var i = 0; i < n; i++) '[v$i]'].join();
+        parts.add('${ins}concat=n=$n:v=1:a=0[c]');
+        last = '[c]';
+      }
+      if (overlayPath != null) {
+        parts.add('[$n:v]format=rgba[fr]');
+        parts.add('$last[fr]overlay=0:0[ov]');
+        last = '[ov]';
+      }
+      parts.add('${last}split[a][b]');
+      parts.add('[a]palettegen=max_colors=256:stats_mode=diff[p]');
+      parts.add('[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle[o]');
+      final fc = parts.join(';');
+
       final out = '${dir.path}/make_${DateTime.now().millisecondsSinceEpoch}.gif';
       args.addAll(['-filter_complex', fc, '-map', '[o]', '-loop', '0', out]);
 
@@ -304,7 +563,10 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
           file: out,
           name: 'GIF',
           length: Duration(milliseconds: (_totalSeconds * 1000).round()),
+          proj: _projectJson(),
         );
+        final old = widget.replaceId;
+        if (old != null) await studio.removeSaved(old);
       } else {
         error = 'Could not make the GIF. Try shorter clips or a lower quality.';
       }
@@ -390,6 +652,9 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
                         Text('Drag the picture above to move it inside the frame.',
                             style: AppText.small),
                         const SizedBox(height: 18),
+                        const SizedBox(height: 4),
+                        _frameSection(),
+                        const SizedBox(height: 18),
                         const Text('Quality', style: AppText.h2),
                         const SizedBox(height: 8),
                         Seg(
@@ -421,6 +686,140 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
     );
   }
 
+  Widget _dot({required bool on, required Widget child, required VoidCallback onTap, VoidCallback? onLong}) {
+    return GestureDetector(
+      onTap: onTap,
+      onLongPress: onLong,
+      child: Container(
+        width: 34,
+        height: 34,
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: on ? AppColors.pri : AppColors.line, width: on ? 3 : 1),
+        ),
+        child: ClipOval(child: child),
+      ),
+    );
+  }
+
+  Widget _frameSection() {
+    final active = _fshape != FrameShape.none;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Frame', style: AppText.h2),
+        const SizedBox(height: 4),
+        Text('The video plays inside the shape you choose.', style: AppText.small),
+        const SizedBox(height: 8),
+        Seg(
+          labels: kFrameShapeLabels,
+          index: _fshape.index,
+          onChanged: (i) => setState(() {
+            _fshape = FrameShape.values[i];
+            // Shapes look right on a square canvas.
+            if (_fshape != FrameShape.none && _shape == 0) _shape = 1;
+          }),
+        ),
+        if (active) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Text('Frame size', style: AppText.small),
+              Expanded(
+                child: Slider(
+                  value: (0.32 - _pad).clamp(0.02, 0.30).toDouble(),
+                  min: 0.02,
+                  max: 0.30,
+                  onChanged: (v) => setState(() => _pad = 0.32 - v),
+                ),
+              ),
+            ],
+          ),
+          Text('Border', style: AppText.small),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (var i = 0; i < kFrameBorders.length; i++)
+                _dot(
+                  on: _border == i,
+                  onTap: () => setState(() => _border = i),
+                  child: kFrameBorders[i].color == null
+                      ? const ColoredBox(
+                          color: Colors.white,
+                          child: Icon(Icons.block, size: 18, color: Colors.black38))
+                      : DecoratedBox(
+                          decoration: kFrameBorders[i].gold
+                              ? const BoxDecoration(
+                                  gradient: LinearGradient(colors: [
+                                  Color(0xFFF9E27D),
+                                  Color(0xFFB8860B),
+                                  Color(0xFFF9E27D),
+                                ]))
+                              : BoxDecoration(color: kFrameBorders[i].color),
+                        ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text('Around the frame', style: AppText.small),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 38,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (var i = 0; i < kFrameBgs.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _dot(
+                      on: _artPath == null && _bg == i,
+                      onTap: () async {
+                        _bg = i;
+                        await _setArt(null);
+                      },
+                      child: ColoredBox(color: kFrameBgs[i]),
+                    ),
+                  ),
+                for (final f in _arts)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _dot(
+                      on: _artPath == f.path,
+                      onTap: () => _setArt(f.path),
+                      onLong: () async {
+                        await GifArt.remove(f.path);
+                        if (_artPath == f.path) await _setArt(null);
+                        await _loadArts();
+                        if (mounted) _toast('Picture removed from GIF studio');
+                      },
+                      child: Image.file(f, fit: BoxFit.cover, cacheWidth: 100),
+                    ),
+                  ),
+                GestureDetector(
+                  onTap: _addArt,
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.line),
+                    ),
+                    child: const Icon(Icons.add_rounded, color: AppColors.pri, size: 20),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text('Pictures you add stay here. Press and hold one to remove it.', style: AppText.small),
+        ],
+      ],
+    );
+  }
+
   Widget _preview() {
     final c = _ctrl;
     final ar = _aspect();
@@ -445,18 +844,30 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
                           _panX = (_panX - d.delta.dx / (box.maxWidth / 2)).clamp(-1.0, 1.0).toDouble();
                           _panY = (_panY - d.delta.dy / (box.maxHeight / 2)).clamp(-1.0, 1.0).toDouble();
                         }),
-                        child: Transform.scale(
-                          scale: _zoom,
-                          child: FittedBox(
-                            fit: BoxFit.cover,
-                            alignment: Alignment(_panX, _panY),
-                            clipBehavior: Clip.hardEdge,
-                            child: SizedBox(
-                              width: size.width,
-                              height: size.height,
-                              child: VideoPlayer(c),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Transform.scale(
+                              scale: _zoom,
+                              child: FittedBox(
+                                fit: BoxFit.cover,
+                                alignment: Alignment(_panX, _panY),
+                                clipBehavior: Clip.hardEdge,
+                                child: SizedBox(
+                                  width: size.width,
+                                  height: size.height,
+                                  child: VideoPlayer(c),
+                                ),
+                              ),
                             ),
-                          ),
+                            if (_style.active)
+                              IgnorePointer(
+                                child: CustomPaint(
+                                  size: Size.infinite,
+                                  painter: FramePainter(_style),
+                                ),
+                              ),
+                          ],
                         ),
                       );
                     },

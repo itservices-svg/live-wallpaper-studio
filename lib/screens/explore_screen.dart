@@ -9,6 +9,8 @@ import '../services/pixabay.dart';
 import '../state/studio_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../services/gif_art.dart';
+import 'gif_editor_screen.dart';
 import 'motion_editor_screen.dart';
 import 'preview_screen.dart';
 
@@ -85,7 +87,12 @@ const _kinds = <_Kind>[
 
 /// Free photos and videos from Pixabay, by category, ready to turn into wallpapers.
 class ExploreScreen extends StatefulWidget {
-  const ExploreScreen({super.key});
+  /// [allowed]: kinds (indexes into the list above) when this screen is opened to pick one
+  /// item and return it; null for the normal Explore tab.
+  const ExploreScreen({super.key, this.allowed, this.title});
+
+  final List<int>? allowed;
+  final String? title;
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
@@ -103,6 +110,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
   String _query = _kinds[0].cats[0].$2;
   int _startPage = 1;
 
+  bool _downloading = false;
+
+  bool get _picking => widget.allowed != null;
+  List<int> get _kindList => widget.allowed ?? const [0, 1, 2, 3, 4];
   _Kind get _kind => _kinds[_kindIdx];
   bool get _video => _kind.video;
   int _page = 1;
@@ -120,6 +131,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
         _load();
       }
     });
+    if (_picking) {
+      _kindIdx = widget.allowed!.first;
+      _query = _kind.cats[0].$2;
+      if (_kind.video) _filters = _filters.copyWith(orientation: 'all');
+    }
     _reload();
   }
 
@@ -188,30 +204,76 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
   }
 
+  void _toast(String m) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(m), behavior: SnackBarBehavior.floating));
+  }
+
+  Future<void> _pickItem(PixabayItem it) async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
+    try {
+      final file = await Pixabay.download(it.url, it.isVideo ? 'mp4' : 'jpg', id: it.id);
+      if (!mounted) return;
+      Navigator.of(context).pop(MediaItem.fromFile(file.path, 'Pixabay ${it.id}',
+          video: it.isVideo, seconds: it.seconds));
+    } catch (e) {
+      if (mounted) _toast('Could not download: $e');
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final body = _content(context);
+    if (!_picking) return body;
+    return Scaffold(
+      body: Stack(
+        children: [
+          body,
+          if (_downloading)
+            const Positioned.fill(
+              child: ColoredBox(
+                color: Color(0x66000000),
+                child: Center(child: CircularProgressIndicator(color: Colors.white)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _content(BuildContext context) {
     return SafeArea(
       bottom: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 10, 20, 2),
-            child: Text('Explore', style: AppText.title),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-            child: Text('Free photos and videos from Pixabay', style: AppText.small),
-          ),
+          if (_picking)
+            AppNav(title: widget.title ?? 'Explore', back: 'Back')
+          else ...[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 10, 20, 2),
+              child: Text('Explore', style: AppText.title),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+              child: Text('Free photos and videos from Pixabay', style: AppText.small),
+            ),
+          ],
+          if (_kindList.length > 1)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: SizedBox(
               height: 38,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: _kinds.length,
+                itemCount: _kindList.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
-                itemBuilder: (_, i) {
+                itemBuilder: (_, ix) {
+                  final i = _kindList[ix];
                   final on = i == _kindIdx;
                   return GestureDetector(
                     onTap: () {
@@ -369,7 +431,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
     return GridView.builder(
       controller: _scroll,
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 130),
+      padding: EdgeInsets.fromLTRB(20, 0, 20, _picking ? 24 : 130),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         crossAxisSpacing: 10,
@@ -391,8 +453,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
         }
         final it = _items[i];
         return GestureDetector(
-          onTap: () => Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => ExploreViewer(item: it))),
+          onTap: () => _picking
+              ? _pickItem(it)
+              : Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => ExploreViewer(item: it))),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: Stack(
@@ -471,24 +535,34 @@ class _ExploreViewerState extends State<ExploreViewer> {
       ..showSnackBar(SnackBar(content: Text(m), behavior: SnackBarBehavior.floating));
   }
 
-  Future<void> _use() async {
+  /// [gif] false: open the wallpaper editor. true: open the GIF studio (video as a clip,
+  /// pictures as a backdrop that stays saved there).
+  Future<void> _go(bool gif) async {
     if (_busy) return;
     setState(() => _busy = true);
     final nav = Navigator.of(context);
     try {
       _video?.pause();
       final file = await Pixabay.download(item.url, item.isVideo ? 'mp4' : 'jpg', id: item.id);
-      final keep = <String>{
-        for (final t in studio.library)
-          if (t.assetId.startsWith('file:')) t.assetId.substring(5),
-        file.path,
-      };
+      bool keep(String p) =>
+          p == file.path ||
+          studio.library.any((t) => t.assetId == 'file:$p' || (t.proj?.contains(p) ?? false));
       unawaited(Pixabay.cleanup(keep));
-      studio.loadMedia(MediaItem.fromFile(file.path, 'Pixabay ${item.id}',
-          video: item.isVideo, seconds: item.seconds));
-      nav.pushReplacement(MaterialPageRoute(
-        builder: (_) => item.isVideo ? const MotionEditorScreen() : const PreviewScreen(),
-      ));
+      final mi = MediaItem.fromFile(file.path, 'Pixabay ${item.id}',
+          video: item.isVideo, seconds: item.seconds);
+      if (gif) {
+        if (item.isVideo) {
+          nav.pushReplacement(MaterialPageRoute(builder: (_) => GifEditorScreen(initialClip: mi)));
+        } else {
+          final art = await GifArt.add(file.path);
+          nav.pushReplacement(MaterialPageRoute(builder: (_) => GifEditorScreen(initialArt: art)));
+        }
+      } else {
+        studio.loadMedia(mi);
+        nav.pushReplacement(MaterialPageRoute(
+          builder: (_) => item.isVideo ? const MotionEditorScreen() : const PreviewScreen(),
+        ));
+      }
     } catch (e) {
       if (mounted) _toast('Could not download: $e');
     } finally {
@@ -548,7 +622,21 @@ class _ExploreViewerState extends State<ExploreViewer> {
                       height: 48,
                       child: Center(child: CircularProgressIndicator(color: Colors.white)),
                     )
-                  : PrimaryButton(wide: true, label: 'Use in Studio', onTap: _use),
+                  : Row(
+                      children: [
+                        Expanded(
+                          child: PrimaryButton(
+                              wide: true, label: 'Make Wallpaper', onTap: () => _go(false)),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: PrimaryButton(
+                              wide: true,
+                              label: item.isVideo ? 'Make GIF' : 'Add to GIF Studio',
+                              onTap: () => _go(true)),
+                        ),
+                      ],
+                    ),
             ),
           ),
         ],

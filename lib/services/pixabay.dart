@@ -174,12 +174,12 @@ class Pixabay {
   }
 
   /// Deletes downloads older than [days] that no saved work refers to.
-  static Future<void> cleanup(Set<String> keep, {int days = 3}) async {
+  static Future<void> cleanup(bool Function(String path) keep, {int days = 3}) async {
     try {
       final d = await dir();
       final cutoff = DateTime.now().subtract(Duration(days: days));
       await for (final e in d.list()) {
-        if (e is File && !keep.contains(e.path) && (await e.lastModified()).isBefore(cutoff)) {
+        if (e is File && !keep(e.path) && (await e.lastModified()).isBefore(cutoff)) {
           await e.delete();
         }
       }

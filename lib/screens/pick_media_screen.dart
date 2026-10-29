@@ -42,9 +42,12 @@ class _Day {
 
 class PickMediaScreen extends StatefulWidget {
   /// [forGif]: videos only, and the chosen clip is returned to the caller.
-  const PickMediaScreen({super.key, this.forGif = false});
+  const PickMediaScreen({super.key, this.forGif = false, this.photos = false});
 
   final bool forGif;
+
+  /// With [forGif]: pick a photo (for a backdrop) instead of a video.
+  final bool photos;
 
   @override
   State<PickMediaScreen> createState() => _PickMediaScreenState();
@@ -254,7 +257,7 @@ class _PickMediaScreenState extends State<PickMediaScreen> {
                 Column(
                   children: [
                     AppNav(
-                      title: widget.forGif ? 'Pick a video' : 'Pick Media',
+                      title: widget.forGif ? (widget.photos ? 'Pick a photo' : 'Pick a video') : 'Pick Media',
                       back: widget.forGif ? 'Back' : 'Create',
                       trailing: NavAction('Albums', onTap: _pickAlbum),
                     ),
@@ -262,11 +265,11 @@ class _PickMediaScreenState extends State<PickMediaScreen> {
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                       child: Row(
                         children: [
-                          _Chip('Videos', _fmtInt(_total(true)), video, () => _setKind(true)),
-                          if (!widget.forGif) ...[
-                            const SizedBox(width: 8),
+                          if (!widget.forGif || !widget.photos)
+                            _Chip('Videos', _fmtInt(_total(true)), video, () => _setKind(true)),
+                          if (!widget.forGif) const SizedBox(width: 8),
+                          if (!widget.forGif || widget.photos)
                             _Chip('Photos', _fmtInt(_total(false)), !video, () => _setKind(false)),
-                          ],
                           const Spacer(),
                           GestureDetector(
                             onTap: _samples ? null : _pickAlbum,

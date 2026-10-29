@@ -520,6 +520,7 @@ class StudioState extends ChangeNotifier {
     String? idHint,
     String? name,
     Duration? length,
+    String? proj,
   }) async {
     final id = idHint ?? DateTime.now().microsecondsSinceEpoch.toString();
     final ext = file.split('.').last;
@@ -544,6 +545,7 @@ class StudioState extends ChangeNotifier {
       zoom: zoom,
       panX: panX,
       panY: panY,
+      proj: proj,
     );
     // Same source and kind again: replace the older entry instead of piling up copies.
     final old = library.where((e) => e.kind == kind && kind != SavedTheme.gif && e.assetId == t.assetId).toList();

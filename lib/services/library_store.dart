@@ -23,6 +23,7 @@ class SavedTheme {
     this.zoom = 1,
     this.panX = 0,
     this.panY = 0,
+    this.proj,
   });
 
   static const wallpaper = 'wallpaper';
@@ -41,9 +42,11 @@ class SavedTheme {
   final double blur; // 0 = no blur (photos only)
   final double start, end, key;
   final double zoom, panX, panY;
+  final String? proj; // GIF project (clips + settings) as JSON, so a GIF can be edited again
 
   bool get isGif => kind == gif;
   bool get canEdit => kind != gif && assetId.isNotEmpty;
+  bool get canEditGif => kind == gif && proj != null && proj!.isNotEmpty;
 
   Map<String, Object?> toJson() => {
         'id': id,
@@ -62,6 +65,7 @@ class SavedTheme {
         'zoom': zoom,
         'panX': panX,
         'panY': panY,
+        'proj': proj,
       };
 
   static SavedTheme? fromJson(Object? o) {
@@ -86,6 +90,7 @@ class SavedTheme {
       zoom: d('zoom', 1),
       panX: d('panX', 0),
       panY: d('panY', 0),
+      proj: o['proj'] as String?,
     );
   }
 
