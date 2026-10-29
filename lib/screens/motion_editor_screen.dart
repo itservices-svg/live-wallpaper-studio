@@ -316,7 +316,7 @@ class _Frame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (state.media.asset == null) {
+    if (!state.media.isReal) {
       return Stack(
         fit: StackFit.expand,
         children: [

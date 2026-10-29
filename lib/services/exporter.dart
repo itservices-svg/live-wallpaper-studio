@@ -69,9 +69,10 @@ class Exporter {
 
   static Future<ui.Image?> _loadSource(StudioState s, Size size) async {
     final a = s.media.asset;
-    if (a == null) return null; // sample scene: drawn as gradients
+    if (!s.media.isReal) return null; // sample scene: drawn as gradients
     Uint8List? bytes = s.media.isVideo ? s.keyStill : null;
-    bytes ??= await a.thumbnailDataWithSize(ThumbnailSize(size.width.round(), size.height.round()));
+    if (bytes == null && a == null) bytes = await File(s.media.file!).readAsBytes();
+    bytes ??= await a!.thumbnailDataWithSize(ThumbnailSize(size.width.round(), size.height.round()));
     if (bytes == null) return null;
     final codec = await ui.instantiateImageCodec(bytes);
     final frame = await codec.getNextFrame();

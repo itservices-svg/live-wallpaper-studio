@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -31,7 +32,7 @@ const _greyPalette = [
 /// timeline strip frames, the key-frame still and the sampled colours.
 class StudioState extends ChangeNotifier {
   static const double minSpan = 0.5;
-  static const double _maxLoop = 3.0;
+  static const double _defaultLoop = 5.0;
   static const int stripCount = 12;
 
   // navigation
@@ -88,7 +89,7 @@ class StudioState extends ChangeNotifier {
   String? get videoPath => _videoPath;
   Scene get scene => scenes[media.sceneIndex % scenes.length];
   double get span => end - start;
-  double get maxSpan => math.min(_maxLoop, sourceLen);
+  double get maxSpan => sourceLen;
   double get minSpanEff => math.min(minSpan, sourceLen);
   int get exportFiles => media.isVideo ? 3 : 2;
 
@@ -137,24 +138,23 @@ class StudioState extends ChangeNotifier {
     strip = const [];
     mediaError = false;
 
-    final a = m.asset;
-    if (a == null) {
+    if (!m.isReal) {
       sourceLen = 12;
       start = 2.10;
       end = 5.10;
       key = 3.42;
       palette = scenes[m.sceneIndex % scenes.length].palette;
     } else {
-      sourceLen = m.isVideo ? math.max(m.seconds, 0.5) : _maxLoop;
+      sourceLen = m.isVideo ? math.max(m.seconds, 0.5) : _defaultLoop;
       start = 0;
-      end = math.min(_maxLoop, sourceLen);
+      end = math.min(_defaultLoop, sourceLen);
       key = (start + end) / 2;
       palette = _greyPalette;
     }
     playhead = start;
     _applyRestore(video: false);
     notifyListeners();
-    if (a != null) unawaited(_loadReal(m, token));
+    if (m.isReal) unawaited(_loadReal(m, token));
   }
 
   SavedTheme? _restore;
@@ -181,16 +181,18 @@ class StudioState extends ChangeNotifier {
   }
 
   Future<void> _loadReal(MediaItem m, int token) async {
-    final a = m.asset!;
+    final a = m.asset;
     try {
       if (!m.isVideo) {
-        final bytes = await a.thumbnailDataWithSize(const ThumbnailSize(96, 96));
+        final bytes = a != null
+            ? await a.thumbnailDataWithSize(const ThumbnailSize(96, 96))
+            : await File(m.file!).readAsBytes();
         await _applyPalette(bytes, token);
         return;
       }
-      final file = await a.file;
+      final File? file = a != null ? await a.file : File(m.file!);
       if (token != _loadToken) return;
-      if (file == null) {
+      if (file == null || !await file.exists()) {
         mediaError = true;
         notifyListeners();
         return;
@@ -208,7 +210,7 @@ class StudioState extends ChangeNotifier {
       if (len > 0.1 && (len - sourceLen).abs() > 0.05) {
         sourceLen = len;
         start = 0;
-        end = math.min(_maxLoop, len);
+        end = math.min(_defaultLoop, len);
         key = (start + end) / 2;
         playhead = start;
       }
@@ -524,7 +526,7 @@ class StudioState extends ChangeNotifier {
     final t = SavedTheme(
       id: id,
       kind: kind,
-      assetId: kind == SavedTheme.gif ? '' : (media.asset?.id ?? 'sample:${media.sceneIndex}'),
+      assetId: kind == SavedTheme.gif ? '' : (media.asset?.id ?? (media.file != null ? 'file:${media.file}' : 'sample:${media.sceneIndex}')),
       name: themeName,
       isVideo: media.isVideo,
       duration: media.isVideo ? fmtDur(Duration(milliseconds: (span * 1000).round())) : '',
@@ -565,6 +567,10 @@ class StudioState extends ChangeNotifier {
     if (t.assetId.startsWith('sample:')) {
       final idx = int.tryParse(t.assetId.substring(7)) ?? 0;
       item = MediaItem(t.name, t.isVideo ? '0:12' : '', idx);
+    } else if (t.assetId.startsWith('file:')) {
+      final p = t.assetId.substring(5);
+      if (!await File(p).exists()) return false;
+      item = MediaItem.fromFile(p, t.name, video: t.isVideo, seconds: 0);
     } else {
       final a = await AssetEntity.fromId(t.assetId);
       if (a == null) return false;

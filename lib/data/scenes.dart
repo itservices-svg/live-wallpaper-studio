@@ -50,7 +50,14 @@ String fmtDur(Duration d) =>
 
 /// One pickable item: either a sample scene or a real gallery asset.
 class MediaItem {
-  const MediaItem(this.name, this.duration, this.sceneIndex, {this.asset});
+  const MediaItem(this.name, this.duration, this.sceneIndex,
+      {this.asset, this.file, this.fileSeconds = 0});
+
+  /// A downloaded file (e.g. from Explore) that lives in app storage, not in the gallery.
+  factory MediaItem.fromFile(String path, String name, {required bool video, double seconds = 0}) {
+    return MediaItem(name, video ? fmtDur(Duration(milliseconds: (seconds * 1000).round())) : '', 0,
+        file: path, fileSeconds: seconds);
+  }
 
   /// Real gallery item. The name is a date label until the user renames the theme.
   factory MediaItem.fromAsset(AssetEntity a) {
@@ -68,15 +75,18 @@ class MediaItem {
   final String duration; // empty for photos
   final int sceneIndex; // only used by sample items
   final AssetEntity? asset; // null for sample items
+  final String? file; // set for downloaded (non-gallery) items
+  final double fileSeconds;
 
-  bool get isReal => asset != null;
+  bool get isReal => asset != null || file != null;
 
   bool get isVideo => asset != null ? asset!.type == AssetType.video : duration.isNotEmpty;
 
-  double get seconds => asset == null ? 0 : asset!.videoDuration.inMilliseconds / 1000.0;
+  double get seconds => asset == null ? fileSeconds : asset!.videoDuration.inMilliseconds / 1000.0;
 
   String get detail {
     final a = asset;
+    if (a == null && file != null) return 'Pixabay';
     if (a == null) return isVideo ? '00:14.08 · 4K · 60 FPS' : '4032×3024 · HEIC';
     final dims = '${a.width}×${a.height}';
     return isVideo ? '$dims · ${fmtDur(a.videoDuration)}' : dims;

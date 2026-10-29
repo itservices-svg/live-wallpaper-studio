@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
@@ -39,13 +41,21 @@ class StillBackdrop extends StatelessWidget {
   Widget build(BuildContext context) {
     final m = state.media;
     final a = m.asset;
-    if (a == null) return Framed(state: state, child: SceneView(scene: state.scene));
+    if (!m.isReal) return Framed(state: state, child: SceneView(scene: state.scene));
     final key = state.keyStill;
     if (m.isVideo && key != null) {
       return Framed(
         state: state,
         child: SizedBox.expand(
           child: Image.memory(key, fit: BoxFit.cover, gaplessPlayback: true),
+        ),
+      );
+    }
+    if (a == null) {
+      return Framed(
+        state: state,
+        child: SizedBox.expand(
+          child: Image.file(File(m.file!), fit: BoxFit.cover, cacheWidth: 1080),
         ),
       );
     }
@@ -104,7 +114,7 @@ class LiveBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final m = state.media;
-    if (m.asset == null) {
+    if (!m.isReal) {
       return Framed(state: state, child: SceneView(scene: state.scene, animate: animate));
     }
     final c = state.video;

@@ -1,5 +1,6 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:photo_manager/photo_manager.dart';
 import 'package:video_player/video_player.dart';
 
 import '../data/scenes.dart';
@@ -36,6 +37,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   final _search = TextEditingController();
   final List<PixabayItem> _items = [];
 
+  PixabayFilters _filters = const PixabayFilters();
   bool _video = false;
   int _cat = 0;
   String _query = _categories[0].$2;
@@ -83,12 +85,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
       _error = null;
     });
     try {
-      final list = await Pixabay.search(query: _query, video: _video, page: _page);
+      final r = await Pixabay.search(
+          query: _query, video: _video, filters: _filters, page: _page);
       if (!mounted || token != _token) return;
       setState(() {
-        _items.addAll(list);
-        _page++;
-        if (list.length < 20) _done = true;
+        _items.addAll(r.items);
+        _page = r.nextPage;
+        _done = r.done;
         _loading = false;
       });
     } catch (e) {
@@ -129,7 +132,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
           const SizedBox(height: 10),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: TextField(
+            child: Row(children: [
+              Expanded(child: TextField(
               controller: _search,
               textInputAction: TextInputAction.search,
               onSubmitted: (v) {
@@ -156,6 +160,23 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 ),
               ),
             ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _openFilters,
+                child: Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: _filters.isDefault ? Colors.white : const Color(0xFF14111F),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.line),
+                  ),
+                  child: Icon(Icons.tune_rounded,
+                      size: 20, color: _filters.isDefault ? AppColors.ink : Colors.white),
+                ),
+              ),
+            ]),
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -199,6 +220,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
+  Future<void> _openFilters() async {
+    final res = await showModalBottomSheet<PixabayFilters>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _FilterSheet(initial: _filters, video: _video),
+    );
+    if (res == null) return;
+    _filters = res;
+    _reload();
+  }
+
   Widget _grid() {
     if (_items.isEmpty) {
       if (_loading) return const Center(child: CircularProgressIndicator());
@@ -226,7 +261,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
         crossAxisCount: 2,
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
-        childAspectRatio: 0.62,
+        childAspectRatio: switch (_filters.orientation) {
+          'landscape' => 1.25,
+          'all' => 0.85,
+          _ => 0.62,
+        },
       ),
       itemCount: _items.length + (_loading || _error != null ? 1 : 0),
       itemBuilder: (context, i) {
@@ -324,18 +363,16 @@ class _ExploreViewerState extends State<ExploreViewer> {
     setState(() => _busy = true);
     final nav = Navigator.of(context);
     try {
-      final perm = await PhotoManager.requestPermissionExtend();
-      if (!perm.hasAccess) {
-        _toast('Allow Photos access to continue.');
-        return;
-      }
       _video?.pause();
-      final file = await Pixabay.download(item.url, item.isVideo ? 'mp4' : 'jpg');
-      final AssetEntity asset = item.isVideo
-          ? await PhotoManager.editor.saveVideo(file, title: 'pixabay_${item.id}.mp4')
-          : await PhotoManager.editor
-              .saveImageWithPath(file.path, title: 'pixabay_${item.id}.jpg');
-      studio.loadMedia(MediaItem.fromAsset(asset));
+      final file = await Pixabay.download(item.url, item.isVideo ? 'mp4' : 'jpg', id: item.id);
+      final keep = <String>{
+        for (final t in studio.library)
+          if (t.assetId.startsWith('file:')) t.assetId.substring(5),
+        file.path,
+      };
+      unawaited(Pixabay.cleanup(keep));
+      studio.loadMedia(MediaItem.fromFile(file.path, 'Pixabay ${item.id}',
+          video: item.isVideo, seconds: item.seconds));
       nav.pushReplacement(MaterialPageRoute(
         builder: (_) => item.isVideo ? const MotionEditorScreen() : const PreviewScreen(),
       ));
@@ -402,6 +439,110 @@ class _ExploreViewerState extends State<ExploreViewer> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FilterSheet extends StatefulWidget {
+  const _FilterSheet({required this.initial, required this.video});
+
+  final PixabayFilters initial;
+  final bool video;
+
+  @override
+  State<_FilterSheet> createState() => _FilterSheetState();
+}
+
+class _FilterSheetState extends State<_FilterSheet> {
+  late PixabayFilters f = widget.initial;
+
+  static const _orient = ['portrait', 'landscape', 'all'];
+  static const _orders = ['popular', 'latest'];
+  static const _colors = <(String, Color)>[
+    ('red', Color(0xFFE53935)),
+    ('orange', Color(0xFFFB8C00)),
+    ('yellow', Color(0xFFFDD835)),
+    ('green', Color(0xFF43A047)),
+    ('turquoise', Color(0xFF00ACC1)),
+    ('blue', Color(0xFF1E88E5)),
+    ('lilac', Color(0xFF9575CD)),
+    ('pink', Color(0xFFEC407A)),
+    ('white', Color(0xFFFFFFFF)),
+    ('gray', Color(0xFF9E9E9E)),
+    ('black', Color(0xFF212121)),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Filters', style: AppText.h2),
+            const SizedBox(height: 14),
+            Text('Shape', style: AppText.small),
+            const SizedBox(height: 6),
+            Seg(
+              labels: const ['Portrait', 'Landscape', 'All'],
+              index: _orient.indexOf(f.orientation),
+              onChanged: (i) => setState(() => f = f.copyWith(orientation: _orient[i])),
+            ),
+            const SizedBox(height: 14),
+            Text('Sort by', style: AppText.small),
+            const SizedBox(height: 6),
+            Seg(
+              labels: const ['Popular', 'Latest'],
+              index: _orders.indexOf(f.order),
+              onChanged: (i) => setState(() => f = f.copyWith(order: _orders[i])),
+            ),
+            if (!widget.video) ...[
+              const SizedBox(height: 14),
+              Text('Colour', style: AppText.small),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final c in _colors)
+                    GestureDetector(
+                      onTap: () => setState(
+                          () => f = f.copyWith(color: f.color == c.$1 ? '' : c.$1)),
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: c.$2,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: f.color == c.$1 ? AppColors.pri : AppColors.line,
+                            width: f.color == c.$1 ? 3 : 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                TextButton(
+                  onPressed: () => setState(() => f = const PixabayFilters()),
+                  child: const Text('Reset'),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: PrimaryButton(
+                      wide: true, label: 'Apply', onTap: () => Navigator.pop(context, f)),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
