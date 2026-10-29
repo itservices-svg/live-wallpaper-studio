@@ -3,12 +3,15 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import 'effects.dart';
+export 'effects.dart' show FxEffect, kFxLabels;
+
 enum FrameShape { none, circle, round, heart, star, hexagon }
 
 /// Border animation. One loop lasts [kFrameLoopSeconds].
-enum FrameAnim { none, spin, rainbow, pulse }
+enum FrameAnim { none, spin, rainbow, pulse, fire, thunder, sparkle }
 
-const kFrameAnimLabels = ['Still', 'Spin', 'Rainbow', 'Pulse'];
+const kFrameAnimLabels = ['Still', 'Spin', 'Rainbow', 'Pulse', 'Fire', 'Thunder', 'Sparkle'];
 const double kFrameLoopSeconds = 2.0;
 
 const kFrameShapeLabels = ['None', 'Circle', 'Round', 'Heart', 'Star', 'Hexagon'];
@@ -50,6 +53,7 @@ class FrameStyle {
     this.bg = 0,
     this.art,
     this.anim = FrameAnim.none,
+    this.fx = FxEffect.none,
   });
 
   final FrameShape shape;
@@ -58,6 +62,7 @@ class FrameStyle {
   final int bg; // index into kFrameBgs
   final ui.Image? art; // picture drawn around the shape instead of a plain colour
   final FrameAnim anim;
+  final FxEffect fx; // effect drawn over the whole picture
 
   bool get active => shape != FrameShape.none;
 
@@ -67,7 +72,14 @@ class FrameStyle {
   /// Whether a border is drawn (an animated border always has one).
   bool get hasBorder => kFrameBorders[border.clamp(0, kFrameBorders.length - 1)].color != null || anim != FrameAnim.none;
 
-  bool get animated => active && hasBorder && anim != FrameAnim.none;
+  bool get animated => (active && hasBorder && anim != FrameAnim.none) || fx != FxEffect.none;
+
+  /// Something is drawn over the video (frame and/or effect).
+  bool get needsOverlay => active || fx != FxEffect.none;
+
+  /// The same look without any movement.
+  FrameStyle still() =>
+      FrameStyle(shape: shape, pad: pad, border: border, bg: bg, art: art);
 }
 
 Path framePath(FrameShape s, Size size, double pad) {
@@ -84,19 +96,7 @@ Path framePath(FrameShape s, Size size, double pad) {
       final r = Rect.fromCenter(center: c, width: w * (1 - 2 * pad), height: h * (1 - 2 * pad));
       return Path()..addRRect(RRect.fromRectAndRadius(r, Radius.circular(side * 0.18)));
     case FrameShape.heart:
-      final x = box.left, y = box.top, k = box.width;
-      Offset pt(double a, double b) => Offset(x + k * a, y + k * b);
-      return Path()
-        ..moveTo(pt(0.5, 0.92).dx, pt(0.5, 0.92).dy)
-        ..cubicTo(pt(0.0, 0.58).dx, pt(0.0, 0.58).dy, pt(0.02, 0.12).dx, pt(0.02, 0.12).dy,
-            pt(0.28, 0.12).dx, pt(0.28, 0.12).dy)
-        ..cubicTo(pt(0.42, 0.12).dx, pt(0.42, 0.12).dy, pt(0.5, 0.22).dx, pt(0.5, 0.22).dy,
-            pt(0.5, 0.30).dx, pt(0.5, 0.30).dy)
-        ..cubicTo(pt(0.5, 0.22).dx, pt(0.5, 0.22).dy, pt(0.58, 0.12).dx, pt(0.58, 0.12).dy,
-            pt(0.72, 0.12).dx, pt(0.72, 0.12).dy)
-        ..cubicTo(pt(0.98, 0.12).dx, pt(0.98, 0.12).dy, pt(1.0, 0.58).dx, pt(1.0, 0.58).dy,
-            pt(0.5, 0.92).dx, pt(0.5, 0.92).dy)
-        ..close();
+      return heartPathIn(box);
     case FrameShape.star:
       final p = Path();
       final outer = side / 2, inner = side * 0.21;
@@ -149,7 +149,11 @@ class FramePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (!style.active) return;
+    if (style.active) _paintFrame(canvas, size);
+    paintFx(canvas, size, style.fx, _t);
+  }
+
+  void _paintFrame(Canvas canvas, Size size) {
     final full = Offset.zero & size;
     final shape = framePath(style.shape, size, style.pad);
 
@@ -221,6 +225,16 @@ class FramePainter extends CustomPainter {
             Color(0xFFFF3B30),
           ],
         ).createShader(full);
+      case FrameAnim.fire:
+        paintFireEdge(canvas, shape, size, _t);
+        width = baseW * 0.7;
+        paint.color = const Color(0xFFFF6A00);
+      case FrameAnim.thunder:
+        paintThunderEdge(canvas, shape, size, _t);
+        return;
+      case FrameAnim.sparkle:
+        width = baseW * 0.5;
+        paint.color = const Color(0xFFFFD86B);
       case FrameAnim.pulse:
         final k = 0.5 + 0.5 * math.sin(ang);
         width = baseW * (0.6 + 0.9 * k);
@@ -239,6 +253,7 @@ class FramePainter extends CustomPainter {
     }
     paint.strokeWidth = width;
     canvas.drawPath(shape, paint);
+    if (style.anim == FrameAnim.sparkle) paintSparkleEdge(canvas, shape, size, _t);
   }
 
   @override
@@ -249,6 +264,7 @@ class FramePainter extends CustomPainter {
       old.style.bg != style.bg ||
       old.style.art != style.art ||
       old.style.anim != style.anim ||
+      old.style.fx != style.fx ||
       old.phase != phase;
 }
 

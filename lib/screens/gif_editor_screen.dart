@@ -95,6 +95,7 @@ class _GifEditorScreenState extends State<GifEditorScreen> with SingleTickerProv
 
   late final AnimationController _clock;
   FrameAnim _anim = FrameAnim.none;
+  FxEffect _fx = FxEffect.none;
   double _transDur = 0.5;
   bool _playAll = true;
   bool _switching = false;
@@ -108,7 +109,7 @@ class _GifEditorScreenState extends State<GifEditorScreen> with SingleTickerProv
   List<File> _arts = [];
 
   FrameStyle get _style =>
-      FrameStyle(shape: _fshape, pad: _pad, border: _border, bg: _bg, art: _artImg, anim: _anim);
+      FrameStyle(shape: _fshape, pad: _pad, border: _border, bg: _bg, art: _artImg, anim: _anim, fx: _fx);
 
   @override
   void initState() {
@@ -360,6 +361,7 @@ class _GifEditorScreenState extends State<GifEditorScreen> with SingleTickerProv
       _border = i('b', 0, kFrameBorders.length - 1);
       _bg = ((j['bg'] as num?)?.toInt() ?? 0).clamp(-1, kFrameBgs.length - 1).toInt();
       _anim = FrameAnim.values[i('an', 0, FrameAnim.values.length - 1)];
+      _fx = FxEffect.values[i('fx', 0, FxEffect.values.length - 1)];
       _transDur = d('td', 0.5).clamp(0.2, 1.2).toDouble();
       final art = j['art'] as String?;
       if (art != null && await File(art).exists()) await _setArt(art);
@@ -416,6 +418,7 @@ class _GifEditorScreenState extends State<GifEditorScreen> with SingleTickerProv
         'b': _border,
         'bg': _bg,
         'an': _anim.index,
+        'fx': _fx.index,
         'td': _transDur,
         'art': _artPath,
       });
@@ -573,7 +576,7 @@ class _GifEditorScreenState extends State<GifEditorScreen> with SingleTickerProv
     final n = _clips.length;
     final dur = xfade ? _totalSeconds : _clips.fold<double>(0, (a, c) => a + c.span);
     final dStr = dur.toStringAsFixed(3);
-    final style = _style;
+    final style = animate ? _style : _style.still();
     final args = <String>['-y'];
     for (final c in _clips) {
       args.addAll(['-ss', c.start.toStringAsFixed(3), '-t', c.span.toStringAsFixed(3), '-i', c.path]);
@@ -601,7 +604,7 @@ class _GifEditorScreenState extends State<GifEditorScreen> with SingleTickerProv
       args.addAll(['-loop', '1', '-framerate', '$fps', '-t', dStr, '-i', path]);
       maskIdx = next++;
     }
-    if (style.active && (!style.transparent || style.hasBorder)) {
+    if ((style.active && (!style.transparent || style.hasBorder)) || style.fx != FxEffect.none) {
       if (animate && style.animated) {
         final k = math.min(fps * 2, 40); // one loop = 2 seconds
         for (var i = 0; i < k; i++) {
@@ -808,6 +811,23 @@ class _GifEditorScreenState extends State<GifEditorScreen> with SingleTickerProv
                         const SizedBox(height: 4),
                         _frameSection(),
                         const SizedBox(height: 18),
+                        const Text('Effects', style: AppText.h2),
+                        const SizedBox(height: 4),
+                        Text('Drawn over the whole GIF, like in a video editor.', style: AppText.small),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            for (var i = 0; i < kFxLabels.length; i++)
+                              ChoiceChip(
+                                label: Text(kFxLabels[i]),
+                                selected: _fx.index == i,
+                                onSelected: (_) => setState(() => _fx = FxEffect.values[i]),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 18),
                         const Text('Quality', style: AppText.h2),
                         const SizedBox(height: 8),
                         Seg(
@@ -891,11 +911,23 @@ class _GifEditorScreenState extends State<GifEditorScreen> with SingleTickerProv
           ),
           Text('Border animation', style: AppText.small),
           const SizedBox(height: 6),
-          Seg(
-            labels: kFrameAnimLabels,
-            index: _anim.index,
-            onChanged: (i) => setState(() => _anim = FrameAnim.values[i]),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (var i = 0; i < kFrameAnimLabels.length; i++)
+                ChoiceChip(
+                  label: Text(kFrameAnimLabels[i]),
+                  selected: _anim.index == i,
+                  onSelected: (_) => setState(() => _anim = FrameAnim.values[i]),
+                ),
+            ],
           ),
+          if (_anim.index >= FrameAnim.fire.index)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('Fire, Thunder and Sparkle use their own colours.', style: AppText.small),
+            ),
           const SizedBox(height: 10),
           Text('Border colour', style: AppText.small),
           const SizedBox(height: 6),
@@ -1047,7 +1079,7 @@ class _GifEditorScreenState extends State<GifEditorScreen> with SingleTickerProv
                                 ),
                               ),
                             ),
-                            if (_style.active)
+                            if (_style.needsOverlay)
                               IgnorePointer(
                                 child: CustomPaint(
                                   size: Size.infinite,
