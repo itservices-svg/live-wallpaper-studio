@@ -35,12 +35,27 @@ class _Clip {
   final double length; // seconds
   final Size size;
   final String? assetId; // gallery id, so the clip can be found again when editing
+  int trans = 1; // transition into this clip from the previous one (index into _transitions)
   double start = 0;
   late double end;
   List<Uint8List?> strip = List<Uint8List?>.filled(8, null);
 
   double get span => end - start;
 }
+
+/// Transitions between two clips: label and the FFmpeg `xfade` name. 'Cut' is a very short fade.
+const _transitions = <(String, String)>[
+  ('Cut', 'fade'),
+  ('Fade', 'fade'),
+  ('Slide', 'slideleft'),
+  ('Wipe', 'wipeleft'),
+  ('Circle', 'circleopen'),
+  ('Zoom', 'zoomin'),
+  ('Dissolve', 'dissolve'),
+  ('Pixelate', 'pixelize'),
+  ('Radial', 'radial'),
+  ('Black fade', 'fadeblack'),
+];
 
 const _shapes = <(String, double)>[
   ('Original', 0),
@@ -65,7 +80,7 @@ class GifEditorScreen extends StatefulWidget {
   State<GifEditorScreen> createState() => _GifEditorScreenState();
 }
 
-class _GifEditorScreenState extends State<GifEditorScreen> {
+class _GifEditorScreenState extends State<GifEditorScreen> with SingleTickerProviderStateMixin {
   final List<_Clip> _clips = [];
   int _sel = -1;
   VideoPlayerController? _ctrl;
@@ -78,6 +93,12 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
   bool _busy = false;
   bool _adding = false;
 
+  late final AnimationController _clock;
+  FrameAnim _anim = FrameAnim.none;
+  double _transDur = 0.5;
+  bool _playAll = true;
+  bool _switching = false;
+
   FrameShape _fshape = FrameShape.none;
   double _pad = 0.12;
   int _border = 0;
@@ -87,17 +108,19 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
   List<File> _arts = [];
 
   FrameStyle get _style =>
-      FrameStyle(shape: _fshape, pad: _pad, border: _border, bg: _bg, art: _artImg);
+      FrameStyle(shape: _fshape, pad: _pad, border: _border, bg: _bg, art: _artImg, anim: _anim);
 
   @override
   void initState() {
     super.initState();
+    _clock = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat();
     _loadArts();
     WidgetsBinding.instance.addPostFrameCallback((_) => _boot());
   }
 
   @override
   void dispose() {
+    _clock.dispose();
     _ctrl?.removeListener(_loopCheck);
     _ctrl?.dispose();
     super.dispose();
@@ -105,7 +128,22 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
 
   _Clip? get _cur => (_sel >= 0 && _sel < _clips.length) ? _clips[_sel] : null;
 
-  double get _totalSeconds => _clips.fold<double>(0, (a, c) => a + c.span);
+  /// Length of the joined GIF: the clips minus the overlap of each transition.
+  double get _totalSeconds {
+    var t = _clips.fold<double>(0, (a, c) => a + c.span);
+    for (var k = 0; k < _clips.length - 1; k++) {
+      t -= _junction(k);
+    }
+    return math.max(t, 0.1);
+  }
+
+  /// Overlap (seconds) between clip [k] and clip [k + 1].
+  double _junction(int k) {
+    if (k < 0 || k + 1 >= _clips.length) return 0;
+    if (_clips[k + 1].trans == 0) return 0.05;
+    final limit = 0.45 * math.min(_clips[k].span, _clips[k + 1].span);
+    return math.max(0.05, math.min(_transDur, limit));
+  }
 
   double _aspect() {
     final f = _shapes[_shape].$2;
@@ -280,12 +318,13 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
 
   /// Opens [path] as a new clip and makes it the one being edited.
   Future<void> _attach(String path, String name, String? assetId,
-      {double? start, double? end}) async {
+      {double? start, double? end, int? trans}) async {
     try {
       final c = VideoPlayerController.file(File(path));
       await c.initialize();
       final len = c.value.duration.inMilliseconds / 1000.0;
       final clip = _Clip(path, name, len, c.value.size, assetId);
+      if (trans != null) clip.trans = trans.clamp(0, _transitions.length - 1).toInt();
       if (start != null) clip.start = start.clamp(0.0, len).toDouble();
       if (end != null) clip.end = end.clamp(clip.start, len).toDouble();
       await c.setVolume(0);
@@ -319,7 +358,9 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
       _fshape = FrameShape.values[i('f', 0, FrameShape.values.length - 1)];
       _pad = d('pad', 0.12).clamp(0.02, 0.3).toDouble();
       _border = i('b', 0, kFrameBorders.length - 1);
-      _bg = i('bg', 0, kFrameBgs.length - 1);
+      _bg = ((j['bg'] as num?)?.toInt() ?? 0).clamp(-1, kFrameBgs.length - 1).toInt();
+      _anim = FrameAnim.values[i('an', 0, FrameAnim.values.length - 1)];
+      _transDur = d('td', 0.5).clamp(0.2, 1.2).toDouble();
       final art = j['art'] as String?;
       if (art != null && await File(art).exists()) await _setArt(art);
       if (mounted) setState(() {});
@@ -339,7 +380,9 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
           continue;
         }
         await _attach(path, (m['n'] as String?) ?? 'Clip', a,
-            start: (m['s'] as num?)?.toDouble(), end: (m['e'] as num?)?.toDouble());
+            start: (m['s'] as num?)?.toDouble(),
+            end: (m['e'] as num?)?.toDouble(),
+            trans: (m['t'] as num?)?.toInt());
       }
       if (!mounted) return;
       if (_clips.isEmpty) {
@@ -361,7 +404,7 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
         'v': 1,
         'clips': [
           for (final c in _clips)
-            {'a': c.assetId, 'p': c.path, 'n': c.name, 's': c.start, 'e': c.end},
+            {'a': c.assetId, 'p': c.path, 'n': c.name, 's': c.start, 'e': c.end, 't': c.trans},
         ],
         'crop': _shape,
         'q': _quality,
@@ -372,6 +415,8 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
         'pad': _pad,
         'b': _border,
         'bg': _bg,
+        'an': _anim.index,
+        'td': _transDur,
         'art': _artPath,
       });
 
@@ -411,9 +456,29 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
     final c = _ctrl, clip = _cur;
     if (c == null || clip == null || !c.value.isInitialized) return;
     final pos = c.value.position.inMilliseconds / 1000.0;
-    if (pos >= clip.end - 0.02 || pos < clip.start - 0.3) {
+    if (pos >= clip.end - 0.02 && pos >= clip.start) {
+      if (_playAll && _clips.length > 1) {
+        // Play the clips one after another, then start again from the first.
+        if (!_switching) {
+          _switching = true;
+          c.pause();
+          unawaited(_advance());
+        }
+        return;
+      }
       c.seekTo(Duration(milliseconds: (clip.start * 1000).round()));
       if (!c.value.isPlaying) c.play();
+    } else if (pos < clip.start - 0.3) {
+      c.seekTo(Duration(milliseconds: (clip.start * 1000).round()));
+      if (!c.value.isPlaying) c.play();
+    }
+  }
+
+  Future<void> _advance() async {
+    try {
+      await _select((_sel + 1) % _clips.length);
+    } finally {
+      _switching = false;
     }
   }
 
@@ -481,83 +546,146 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
 
   // ---- export
 
+  /// Builds the GIF with FFmpeg and returns its path, or null if FFmpeg failed.
+  /// [animate]: animated border. [xfade]: smooth transitions (false = plain cuts).
+  Future<String?> _render({required bool animate, required bool xfade}) async {
+    final q = kGifPresets[_quality];
+    final ar = _aspect();
+    var w = q.width;
+    var h = (w / ar).round();
+    if (h > 1280) {
+      h = 1280;
+      w = (h * ar).round();
+    }
+    w -= w % 2;
+    h -= h % 2;
+    final fps = q.fps;
+    final ax = ((_panX + 1) / 2).toStringAsFixed(3);
+    final ay = ((_panY + 1) / 2).toStringAsFixed(3);
+    var cw = (w / _zoom).floor();
+    var ch = (h / _zoom).floor();
+    cw -= cw % 2;
+    ch -= ch % 2;
+    final vf = 'fps=$fps,scale=$w:$h:force_original_aspect_ratio=increase,'
+        'crop=$w:$h:(iw-$w)*$ax:(ih-$h)*$ay'
+        '${_zoom > 1.001 ? ',crop=$cw:$ch,scale=$w:$h' : ''},setsar=1,format=yuv420p';
+
+    final n = _clips.length;
+    final dur = xfade ? _totalSeconds : _clips.fold<double>(0, (a, c) => a + c.span);
+    final dStr = dur.toStringAsFixed(3);
+    final style = _style;
+    final args = <String>['-y'];
+    for (final c in _clips) {
+      args.addAll(['-ss', c.start.toStringAsFixed(3), '-t', c.span.toStringAsFixed(3), '-i', c.path]);
+    }
+
+    final tmp = await getTemporaryDirectory();
+    final dir = await Directory('${tmp.path}/gif').create(recursive: true);
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+
+    Future<String> draw(void Function(Canvas, Size) fn, String path) async {
+      final rec = ui.PictureRecorder();
+      fn(Canvas(rec), Size(w.toDouble(), h.toDouble()));
+      final img = await rec.endRecording().toImage(w, h);
+      final data = await img.toByteData(format: ui.ImageByteFormat.png);
+      img.dispose();
+      if (data == null) throw Exception('could not draw the frame');
+      await File(path).writeAsBytes(data.buffer.asUint8List(), flush: true);
+      return path;
+    }
+
+    var next = n;
+    int? maskIdx, ringIdx;
+    if (style.active && style.transparent) {
+      final path = await draw((c, s) => FramePainter.paintMask(c, s, style), '${dir.path}/mask_$stamp.png');
+      args.addAll(['-loop', '1', '-framerate', '$fps', '-t', dStr, '-i', path]);
+      maskIdx = next++;
+    }
+    if (style.active && (!style.transparent || style.hasBorder)) {
+      if (animate && style.animated) {
+        final k = math.min(fps * 2, 40); // one loop = 2 seconds
+        for (var i = 0; i < k; i++) {
+          await draw((c, s) => FramePainter(style, phase: i / k).paint(c, s),
+              '${dir.path}/ring_${stamp}_${i.toString().padLeft(3, '0')}.png');
+        }
+        args.addAll([
+          '-stream_loop', '-1', '-framerate', '${k ~/ 2}', '-t', dStr,
+          '-i', '${dir.path}/ring_${stamp}_%03d.png',
+        ]);
+      } else {
+        final path = await draw((c, s) => FramePainter(style).paint(c, s), '${dir.path}/ring_$stamp.png');
+        args.addAll(['-loop', '1', '-framerate', '$fps', '-t', dStr, '-i', path]);
+      }
+      ringIdx = next++;
+    }
+
+    final parts = <String>[for (var i = 0; i < n; i++) '[$i:v]$vf,setpts=PTS-STARTPTS[v$i]'];
+    var last = '[v0]';
+    if (n > 1) {
+      if (xfade) {
+        var acc = '[v0]';
+        var len = _clips[0].span;
+        for (var k = 0; k < n - 1; k++) {
+          final t = _junction(k);
+          final name = _transitions[_clips[k + 1].trans].$2;
+          final label = k == n - 2 ? '[c]' : '[x$k]';
+          parts.add('$acc[v${k + 1}]xfade=transition=$name:duration=${t.toStringAsFixed(3)}'
+              ':offset=${(len - t).toStringAsFixed(3)}$label');
+          acc = label;
+          len = len + _clips[k + 1].span - t;
+        }
+      } else {
+        final ins = [for (var i = 0; i < n; i++) '[v$i]'].join();
+        parts.add('${ins}concat=n=$n:v=1:a=0[c]');
+      }
+      last = '[c]';
+    }
+    if (maskIdx != null) {
+      parts.add('${last}format=yuva420p[vm]');
+      parts.add('[$maskIdx:v]format=gray[mk]');
+      parts.add('[vm][mk]alphamerge[va]');
+      last = '[va]';
+    }
+    if (ringIdx != null) {
+      parts.add('[$ringIdx:v]format=rgba[fr]');
+      parts.add('$last[fr]overlay=0:0:shortest=1:format=auto[ov]');
+      last = '[ov]';
+    }
+    final alpha = maskIdx != null;
+    parts.add('${last}split[a][b]');
+    parts.add('[a]palettegen=max_colors=${alpha ? 255 : 256}:stats_mode=diff${alpha ? ':reserve_transparent=1' : ''}[p]');
+    parts.add('[b][p]paletteuse=dither=sierra2_4a${alpha ? ':alpha_threshold=128' : ':diff_mode=rectangle'}[o]');
+
+    final out = '${dir.path}/make_$stamp.gif';
+    args.addAll(['-filter_complex', parts.join(';'), '-map', '[o]', '-loop', '0', out]);
+    final session = await FFmpegKit.executeWithArguments(args);
+    final code = await session.getReturnCode();
+    final f = File(out);
+    if (ReturnCode.isSuccess(code) && await f.exists() && await f.length() > 0) return out;
+    return null;
+  }
+
   Future<void> _make() async {
     if (_busy || _clips.isEmpty) return;
     setState(() => _busy = true);
     _ctrl?.pause();
     final nav = Navigator.of(context);
     String? error;
+    String? note;
     try {
-      final q = kGifPresets[_quality];
-      final ar = _aspect();
-      var w = q.width;
-      var h = (w / ar).round();
-      if (h > 1280) {
-        h = 1280;
-        w = (h * ar).round();
+      // Try the full result first, then simpler versions if this phone's FFmpeg refuses.
+      final attempts = <(bool, bool, String?)>[(true, true, null)];
+      if (_style.animated) attempts.add((false, true, 'The border animation was skipped.'));
+      if (_clips.length > 1) attempts.add((false, false, 'Transitions and animation were skipped.'));
+      String? out;
+      for (final at in attempts) {
+        out = await _render(animate: at.$1, xfade: at.$2);
+        if (out != null) {
+          note = at.$3;
+          break;
+        }
       }
-      w -= w % 2;
-      h -= h % 2;
-      final ax = ((_panX + 1) / 2).toStringAsFixed(3);
-      final ay = ((_panY + 1) / 2).toStringAsFixed(3);
-      var cw = (w / _zoom).floor();
-      var ch = (h / _zoom).floor();
-      cw -= cw % 2;
-      ch -= ch % 2;
-      final vf = 'fps=${q.fps},scale=$w:$h:force_original_aspect_ratio=increase,'
-          'crop=$w:$h:(iw-$w)*$ax:(ih-$h)*$ay'
-          '${_zoom > 1.001 ? ',crop=$cw:$ch,scale=$w:$h' : ''},setsar=1';
-
-      final n = _clips.length;
-      final args = <String>['-y'];
-      for (final c in _clips) {
-        args.addAll([
-          '-ss', c.start.toStringAsFixed(3),
-          '-t', c.span.toStringAsFixed(3),
-          '-i', c.path,
-        ]);
-      }
-      final base = await getTemporaryDirectory();
-      final dir = await Directory('${base.path}/gif').create(recursive: true);
-
-      // Frame: a transparent-centre picture (outside of the shape + border) laid over the video.
-      String? overlayPath;
-      if (_style.active) {
-        final rec = ui.PictureRecorder();
-        FramePainter(_style).paint(Canvas(rec), Size(w.toDouble(), h.toDouble()));
-        final img = await rec.endRecording().toImage(w, h);
-        final data = await img.toByteData(format: ui.ImageByteFormat.png);
-        img.dispose();
-        if (data == null) throw Exception('could not draw the frame');
-        overlayPath = '${dir.path}/frame_${DateTime.now().millisecondsSinceEpoch}.png';
-        await File(overlayPath).writeAsBytes(data.buffer.asUint8List(), flush: true);
-        args.addAll(['-i', overlayPath]);
-      }
-
-      final parts = <String>[for (var i = 0; i < n; i++) '[$i:v]$vf[v$i]'];
-      var last = '[v0]';
-      if (n > 1) {
-        final ins = [for (var i = 0; i < n; i++) '[v$i]'].join();
-        parts.add('${ins}concat=n=$n:v=1:a=0[c]');
-        last = '[c]';
-      }
-      if (overlayPath != null) {
-        parts.add('[$n:v]format=rgba[fr]');
-        parts.add('$last[fr]overlay=0:0[ov]');
-        last = '[ov]';
-      }
-      parts.add('${last}split[a][b]');
-      parts.add('[a]palettegen=max_colors=256:stats_mode=diff[p]');
-      parts.add('[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle[o]');
-      final fc = parts.join(';');
-
-      final out = '${dir.path}/make_${DateTime.now().millisecondsSinceEpoch}.gif';
-      args.addAll(['-filter_complex', fc, '-map', '[o]', '-loop', '0', out]);
-
-      final session = await FFmpegKit.executeWithArguments(args);
-      final code = await session.getReturnCode();
-      final f = File(out);
-      if (ReturnCode.isSuccess(code) && await f.exists() && await f.length() > 0) {
+      if (out != null) {
         await studio.addWork(
           kind: SavedTheme.gif,
           file: out,
@@ -580,8 +708,8 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
       _ctrl?.play();
       return;
     }
-    _toast('GIF saved in My Work');
-    await Future<void>.delayed(const Duration(milliseconds: 600));
+    _toast(note == null ? 'GIF saved in My Work' : 'GIF saved. $note');
+    await Future<void>.delayed(const Duration(milliseconds: 700));
     studio.setTab(2);
     nav.popUntil((r) => r.isFirst);
   }
@@ -618,6 +746,31 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
                         _preview(),
                         const SizedBox(height: 12),
                         _clipRow(),
+                        if (_clips.length > 1) ...[
+                          const SizedBox(height: 8),
+                          Seg(
+                            labels: const ['Play all clips', 'Only this clip'],
+                            index: _playAll ? 0 : 1,
+                            onChanged: (i) {
+                              setState(() => _playAll = i == 0);
+                              if (_playAll) _ctrl?.play();
+                            },
+                          ),
+                          Row(
+                            children: [
+                              Text('Transition length', style: AppText.small),
+                              Expanded(
+                                child: Slider(
+                                  value: _transDur,
+                                  min: 0.2,
+                                  max: 1.2,
+                                  onChanged: (v) => setState(() => _transDur = v),
+                                ),
+                              ),
+                              Text('${_transDur.toStringAsFixed(1)}s', style: AppText.small),
+                            ],
+                          ),
+                        ],
                         if (cur != null) ...[
                           const SizedBox(height: 16),
                           _trim(cur),
@@ -736,7 +889,15 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
               ),
             ],
           ),
-          Text('Border', style: AppText.small),
+          Text('Border animation', style: AppText.small),
+          const SizedBox(height: 6),
+          Seg(
+            labels: kFrameAnimLabels,
+            index: _anim.index,
+            onChanged: (i) => setState(() => _anim = FrameAnim.values[i]),
+          ),
+          const SizedBox(height: 10),
+          Text('Border colour', style: AppText.small),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -764,13 +925,27 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          Text('Around the frame', style: AppText.small),
+          Text('Around the frame (first circle: nothing, video only in the shape)', style: AppText.small),
           const SizedBox(height: 6),
           SizedBox(
             height: 38,
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _dot(
+                    on: _artPath == null && _bg < 0,
+                    onTap: () async {
+                      _bg = -1;
+                      await _setArt(null);
+                    },
+                    child: const ColoredBox(
+                      color: Colors.white,
+                      child: Icon(Icons.format_color_reset_outlined, size: 18, color: Colors.black54),
+                    ),
+                  ),
+                ),
                 for (var i = 0; i < kFrameBgs.length; i++)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
@@ -820,6 +995,14 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
     );
   }
 
+  /// With a transparent surround only the shape shows the video.
+  Widget _clipped(Widget video) {
+    if (_style.active && _style.transparent) {
+      return ClipPath(clipper: FrameClipper(_fshape, _pad), child: video);
+    }
+    return video;
+  }
+
   Widget _preview() {
     final c = _ctrl;
     final ar = _aspect();
@@ -847,16 +1030,20 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            Transform.scale(
-                              scale: _zoom,
-                              child: FittedBox(
-                                fit: BoxFit.cover,
-                                alignment: Alignment(_panX, _panY),
-                                clipBehavior: Clip.hardEdge,
-                                child: SizedBox(
-                                  width: size.width,
-                                  height: size.height,
-                                  child: VideoPlayer(c),
+                            if (_style.active && _style.transparent)
+                              const CustomPaint(size: Size.infinite, painter: _CheckerPainter()),
+                            _clipped(
+                              Transform.scale(
+                                scale: _zoom,
+                                child: FittedBox(
+                                  fit: BoxFit.cover,
+                                  alignment: Alignment(_panX, _panY),
+                                  clipBehavior: Clip.hardEdge,
+                                  child: SizedBox(
+                                    width: size.width,
+                                    height: size.height,
+                                    child: VideoPlayer(c),
+                                  ),
                                 ),
                               ),
                             ),
@@ -864,7 +1051,7 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
                               IgnorePointer(
                                 child: CustomPaint(
                                   size: Size.infinite,
-                                  painter: FramePainter(_style),
+                                  painter: FramePainter(_style, clock: _style.animated ? _clock : null),
                                 ),
                               ),
                           ],
@@ -878,58 +1065,154 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
     );
   }
 
+  Widget _thumb(int i) {
+    return GestureDetector(
+      onTap: () => _select(i),
+      child: Stack(
+        children: [
+          Container(
+            width: 48,
+            height: 64,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                  color: i == _sel ? AppColors.pri : AppColors.line, width: i == _sel ? 2.5 : 1),
+              color: const Color(0xFF1E1B2E),
+            ),
+            clipBehavior: Clip.hardEdge,
+            child: _clips[i].strip[0] == null
+                ? const Icon(Icons.videocam_rounded, color: Colors.white54, size: 18)
+                : Image.memory(_clips[i].strip[0]!, fit: BoxFit.cover, gaplessPlayback: true),
+          ),
+          Positioned(
+            right: 0,
+            top: 0,
+            child: GestureDetector(
+              onTap: () => _remove(i),
+              child: Container(
+                width: 18,
+                height: 18,
+                decoration: const BoxDecoration(color: Colors.black87, shape: BoxShape.circle),
+                child: const Icon(Icons.close, size: 12, color: Colors.white),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 3,
+            bottom: 2,
+            child: Text('${i + 1}',
+                style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The small button between clip [k] and clip [k + 1]: picks the transition.
+  Widget _junctionButton(int k) {
+    final label = _transitions[_clips[k + 1].trans].$1;
+    return GestureDetector(
+      onTap: () => _pickTransition(k + 1),
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 46,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                color: _clips[k + 1].trans == 0 ? Colors.white : AppColors.pri,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.pri),
+              ),
+              child: Icon(Icons.auto_awesome,
+                  size: 14, color: _clips[k + 1].trans == 0 ? AppColors.pri : Colors.white),
+            ),
+            const SizedBox(height: 3),
+            Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickTransition(int clipIndex) async {
+    final res = await showModalBottomSheet<(int, bool)>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (c) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Transition', style: AppText.h2),
+              const SizedBox(height: 4),
+              Text('How clip $clipIndex changes into clip ${clipIndex + 1}. It shows in the finished GIF.',
+                  style: AppText.small),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (var i = 0; i < _transitions.length; i++)
+                    ChoiceChip(
+                      label: Text(_transitions[i].$1),
+                      selected: _clips[clipIndex].trans == i,
+                      onSelected: (_) => Navigator.pop(c, (i, false)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text('Tap a name to use it here, or use the button below for all clips.',
+                  style: AppText.small),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(c, (_clips[clipIndex].trans, true)),
+                  child: const Text('Use this one between all clips'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (res == null) return;
+    setState(() {
+      if (res.$2) {
+        for (var i = 1; i < _clips.length; i++) {
+          _clips[i].trans = res.$1;
+        }
+      } else {
+        _clips[clipIndex].trans = res.$1;
+      }
+    });
+  }
+
   Widget _clipRow() {
     return SizedBox(
-      height: 64,
+      height: 70,
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          for (var i = 0; i < _clips.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: GestureDetector(
-                onTap: () => _select(i),
-                child: Stack(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: i == _sel ? AppColors.pri : AppColors.line,
-                            width: i == _sel ? 2.5 : 1),
-                        color: const Color(0xFF1E1B2E),
-                      ),
-                      clipBehavior: Clip.hardEdge,
-                      child: _clips[i].strip[0] == null
-                          ? const Icon(Icons.videocam_rounded, color: Colors.white54, size: 18)
-                          : Image.memory(_clips[i].strip[0]!, fit: BoxFit.cover, gaplessPlayback: true),
-                    ),
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: GestureDetector(
-                        onTap: () => _remove(i),
-                        child: Container(
-                          width: 18,
-                          height: 18,
-                          decoration: const BoxDecoration(color: Colors.black87, shape: BoxShape.circle),
-                          child: const Icon(Icons.close, size: 12, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 3,
-                      bottom: 2,
-                      child: Text('${i + 1}',
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          for (var i = 0; i < _clips.length; i++) ...[
+            _thumb(i),
+            if (i < _clips.length - 1)
+              _junctionButton(i)
+            else
+              const SizedBox(width: 8),
+          ],
           GestureDetector(
             onTap: _addClip,
             child: Container(
@@ -988,4 +1271,24 @@ class _GifEditorScreenState extends State<GifEditorScreen> {
       ],
     );
   }
+}
+
+/// Grey/white squares shown behind a transparent GIF in the preview.
+class _CheckerPainter extends CustomPainter {
+  const _CheckerPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const cell = 12.0;
+    final a = Paint()..color = const Color(0xFFFFFFFF);
+    final b = Paint()..color = const Color(0xFFD9D9E3);
+    for (var y = 0; y * cell < size.height; y++) {
+      for (var x = 0; x * cell < size.width; x++) {
+        canvas.drawRect(Rect.fromLTWH(x * cell, y * cell, cell, cell), (x + y).isEven ? a : b);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CheckerPainter old) => false;
 }

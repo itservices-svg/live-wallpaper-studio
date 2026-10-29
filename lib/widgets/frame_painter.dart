@@ -5,6 +5,12 @@ import 'package:flutter/material.dart';
 
 enum FrameShape { none, circle, round, heart, star, hexagon }
 
+/// Border animation. One loop lasts [kFrameLoopSeconds].
+enum FrameAnim { none, spin, rainbow, pulse }
+
+const kFrameAnimLabels = ['Still', 'Spin', 'Rainbow', 'Pulse'];
+const double kFrameLoopSeconds = 2.0;
+
 const kFrameShapeLabels = ['None', 'Circle', 'Round', 'Heart', 'Star', 'Hexagon'];
 
 class FrameBorder {
@@ -43,6 +49,7 @@ class FrameStyle {
     this.border = 0,
     this.bg = 0,
     this.art,
+    this.anim = FrameAnim.none,
   });
 
   final FrameShape shape;
@@ -50,8 +57,17 @@ class FrameStyle {
   final int border; // index into kFrameBorders
   final int bg; // index into kFrameBgs
   final ui.Image? art; // picture drawn around the shape instead of a plain colour
+  final FrameAnim anim;
 
   bool get active => shape != FrameShape.none;
+
+  /// bg < 0 and no picture: nothing is drawn around the shape (transparent GIF).
+  bool get transparent => art == null && bg < 0;
+
+  /// Whether a border is drawn (an animated border always has one).
+  bool get hasBorder => kFrameBorders[border.clamp(0, kFrameBorders.length - 1)].color != null || anim != FrameAnim.none;
+
+  bool get animated => active && hasBorder && anim != FrameAnim.none;
 }
 
 Path framePath(FrameShape s, Size size, double pad) {
@@ -114,53 +130,115 @@ Path framePath(FrameShape s, Size size, double pad) {
 /// Paints everything around the shape (colour or picture) plus the border. The inside is left
 /// empty, so the video behind it shows through. Used for the live preview and for the export.
 class FramePainter extends CustomPainter {
-  const FramePainter(this.style);
+  /// [clock] drives the live preview animation; [phase] (0..1) is used for exported frames.
+  const FramePainter(this.style, {this.clock, this.phase = 0}) : super(repaint: clock);
 
   final FrameStyle style;
+  final Animation<double>? clock;
+  final double phase;
+
+  double get _t => clock?.value ?? phase;
+
+  /// White inside the shape, black outside: the alpha mask for a transparent GIF.
+  static void paintMask(Canvas canvas, Size size, FrameStyle style) {
+    final full = Offset.zero & size;
+    canvas.drawRect(full, Paint()..color = const Color(0xFF000000));
+    canvas.drawPath(framePath(style.shape, size, style.pad),
+        Paint()..color = const Color(0xFFFFFFFF)..isAntiAlias = true);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
     if (!style.active) return;
     final full = Offset.zero & size;
     final shape = framePath(style.shape, size, style.pad);
-    final outside = Path.combine(PathOperation.difference, Path()..addRect(full), shape);
 
-    canvas.save();
-    canvas.clipPath(outside);
-    final art = style.art;
-    if (art != null) {
-      final iw = art.width.toDouble(), ih = art.height.toDouble();
-      final scale = math.max(size.width / iw, size.height / ih);
-      final sw = size.width / scale, sh = size.height / scale;
-      canvas.drawImageRect(
-        art,
-        Rect.fromLTWH((iw - sw) / 2, (ih - sh) / 2, sw, sh),
-        full,
-        Paint()..filterQuality = FilterQuality.medium,
-      );
-    } else {
-      canvas.drawRect(full, Paint()..color = kFrameBgs[style.bg.clamp(0, kFrameBgs.length - 1)]);
-    }
-    canvas.restore();
-
-    final b = kFrameBorders[style.border.clamp(0, kFrameBorders.length - 1)];
-    if (b.color != null) {
-      final paint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = math.min(size.width, size.height) * 0.03
-        ..strokeJoin = StrokeJoin.round
-        ..isAntiAlias = true;
-      if (b.gold) {
-        paint.shader = const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF9E27D), Color(0xFFB8860B), Color(0xFFF9E27D), Color(0xFF8A6508)],
-        ).createShader(full);
+    if (!style.transparent) {
+      final outside = Path.combine(PathOperation.difference, Path()..addRect(full), shape);
+      canvas.save();
+      canvas.clipPath(outside);
+      final art = style.art;
+      if (art != null) {
+        final iw = art.width.toDouble(), ih = art.height.toDouble();
+        final scale = math.max(size.width / iw, size.height / ih);
+        final sw = size.width / scale, sh = size.height / scale;
+        canvas.drawImageRect(
+          art,
+          Rect.fromLTWH((iw - sw) / 2, (ih - sh) / 2, sw, sh),
+          full,
+          Paint()..filterQuality = FilterQuality.medium,
+        );
       } else {
-        paint.color = b.color!;
+        canvas.drawRect(full, Paint()..color = kFrameBgs[style.bg.clamp(0, kFrameBgs.length - 1)]);
       }
-      canvas.drawPath(shape, paint);
+      canvas.restore();
     }
+
+    if (!style.hasBorder) return;
+    final b = kFrameBorders[style.border.clamp(0, kFrameBorders.length - 1)];
+    final color = b.color ?? Colors.white;
+    final baseW = math.min(size.width, size.height) * 0.03;
+    final ang = 2 * math.pi * _t;
+    var width = baseW;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
+
+    List<Color> tones() => b.gold
+        ? const [Color(0xFFF9E27D), Color(0xFFB8860B), Color(0xFFF9E27D), Color(0xFF8A6508)]
+        : [color, color, color];
+
+    switch (style.anim) {
+      case FrameAnim.none:
+        if (b.gold) {
+          paint.shader = const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFF9E27D), Color(0xFFB8860B), Color(0xFFF9E27D), Color(0xFF8A6508)],
+          ).createShader(full);
+        } else {
+          paint.color = color;
+        }
+      case FrameAnim.spin:
+        final base = b.gold ? const Color(0xFFD4AF37) : color;
+        paint.shader = SweepGradient(
+          transform: GradientRotation(ang),
+          colors: [base, Colors.white, base, base.withOpacity(0.25), base],
+          stops: const [0.0, 0.12, 0.3, 0.7, 1.0],
+        ).createShader(full);
+      case FrameAnim.rainbow:
+        paint.shader = SweepGradient(
+          transform: GradientRotation(ang),
+          colors: const [
+            Color(0xFFFF3B30),
+            Color(0xFFFF9500),
+            Color(0xFFFFE600),
+            Color(0xFF34C759),
+            Color(0xFF00C7FF),
+            Color(0xFF5856FF),
+            Color(0xFFFF2D95),
+            Color(0xFFFF3B30),
+          ],
+        ).createShader(full);
+      case FrameAnim.pulse:
+        final k = 0.5 + 0.5 * math.sin(ang);
+        width = baseW * (0.6 + 0.9 * k);
+        final glow = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeJoin = StrokeJoin.round
+          ..strokeWidth = width * 2.2
+          ..color = (b.gold ? const Color(0xFFD4AF37) : color).withOpacity(0.25 + 0.4 * k)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, baseW * 1.2);
+        canvas.drawPath(shape, glow);
+        if (b.gold) {
+          paint.shader = LinearGradient(colors: tones()).createShader(full);
+        } else {
+          paint.color = color;
+        }
+    }
+    paint.strokeWidth = width;
+    canvas.drawPath(shape, paint);
   }
 
   @override
@@ -169,5 +247,21 @@ class FramePainter extends CustomPainter {
       old.style.pad != style.pad ||
       old.style.border != style.border ||
       old.style.bg != style.bg ||
-      old.style.art != style.art;
+      old.style.art != style.art ||
+      old.style.anim != style.anim ||
+      old.phase != phase;
+}
+
+/// Clips a child to the frame shape (used when the area around the shape is transparent).
+class FrameClipper extends CustomClipper<Path> {
+  const FrameClipper(this.shape, this.pad);
+
+  final FrameShape shape;
+  final double pad;
+
+  @override
+  Path getClip(Size size) => framePath(shape, size, pad);
+
+  @override
+  bool shouldReclip(FrameClipper old) => old.shape != shape || old.pad != pad;
 }
