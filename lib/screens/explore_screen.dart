@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
@@ -11,17 +12,75 @@ import '../widgets/common.dart';
 import 'motion_editor_screen.dart';
 import 'preview_screen.dart';
 
-const _categories = <(String, String)>[
-  ('Nature', 'nature landscape'),
-  ('Space', 'space galaxy'),
-  ('Tech', 'technology circuit'),
-  ('Cars', 'sports car'),
-  ('Abstract', 'abstract'),
-  ('Dark', 'dark'),
-  ('City', 'city night'),
-  ('Ocean', 'ocean waves'),
-  ('Animals', 'animals'),
-  ('Flowers', 'flowers'),
+class _Kind {
+  const _Kind(this.label, this.video, this.imageType, this.videoType, this.cats);
+  final String label;
+  final bool video;
+  final String imageType; // photo | vector | illustration | all
+  final String videoType; // all | animation
+  final List<(String, String)> cats; // label, search words
+}
+
+const _kinds = <_Kind>[
+  _Kind('Photos', false, 'photo', 'all', [
+    ('Nature', 'nature landscape'),
+    ('Space', 'space galaxy'),
+    ('Tech', 'technology circuit'),
+    ('Cars', 'sports car'),
+    ('Abstract', 'abstract'),
+    ('Dark', 'dark'),
+    ('City', 'city night'),
+    ('Ocean', 'ocean waves'),
+    ('Mountains', 'mountains'),
+    ('Sunset', 'sunset sky'),
+    ('Animals', 'animals'),
+    ('Flowers', 'flowers'),
+    ('Minimal', 'minimal'),
+    ('Texture', 'texture'),
+  ]),
+  _Kind('Live', true, 'photo', 'all', [
+    ('Nature', 'nature'),
+    ('Space', 'space'),
+    ('Abstract', 'abstract'),
+    ('Particles', 'particles'),
+    ('Neon', 'neon'),
+    ('Rain', 'rain'),
+    ('Fire', 'fire'),
+    ('Ocean', 'ocean waves'),
+    ('City', 'city night'),
+    ('Clouds', 'clouds'),
+    ('Animals', 'animals'),
+  ]),
+  _Kind('Vectors', false, 'vector', 'all', [
+    ('Abstract', 'abstract'),
+    ('Gradient', 'gradient'),
+    ('Pattern', 'pattern'),
+    ('Geometric', 'geometric'),
+    ('Minimal', 'minimal'),
+    ('Mandala', 'mandala'),
+    ('Landscape', 'landscape'),
+    ('Animals', 'animals'),
+    ('Neon', 'neon'),
+  ]),
+  _Kind('Illustrations', false, 'illustration', 'all', [
+    ('Fantasy', 'fantasy'),
+    ('Anime', 'anime'),
+    ('Landscape', 'landscape'),
+    ('Cartoon', 'cartoon'),
+    ('Space', 'space'),
+    ('Dark', 'dark'),
+    ('Neon', 'neon'),
+    ('Art', 'art'),
+  ]),
+  _Kind('Frames', false, 'all', 'all', [
+    ('Photo frame', 'photo frame'),
+    ('Floral', 'floral frame'),
+    ('Gold', 'gold frame'),
+    ('Neon', 'neon frame'),
+    ('Border', 'border frame'),
+    ('Vintage', 'vintage frame'),
+    ('Polaroid', 'polaroid frame'),
+  ]),
 ];
 
 /// Free photos and videos from Pixabay, by category, ready to turn into wallpapers.
@@ -38,9 +97,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
   final List<PixabayItem> _items = [];
 
   PixabayFilters _filters = const PixabayFilters();
-  bool _video = false;
+  final _rand = Random();
+  int _kindIdx = 0;
   int _cat = 0;
-  String _query = _categories[0].$2;
+  String _query = _kinds[0].cats[0].$2;
+  int _startPage = 1;
+
+  _Kind get _kind => _kinds[_kindIdx];
+  bool get _video => _kind.video;
   int _page = 1;
   bool _loading = false;
   bool _done = false;
@@ -69,7 +133,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
   void _reload() {
     _token++;
     _items.clear();
-    _page = 1;
+    // Start from a random page so the same pictures do not show every time.
+    _startPage = 1 + _rand.nextInt(_video ? 4 : 6);
+    _page = _startPage;
     _done = false;
     _error = null;
     _loading = false;
@@ -86,16 +152,35 @@ class _ExploreScreenState extends State<ExploreScreen> {
     });
     try {
       final r = await Pixabay.search(
-          query: _query, video: _video, filters: _filters, page: _page);
+          query: _query,
+          video: _video,
+          filters: _filters,
+          imageType: _kind.imageType,
+          videoType: _kind.videoType,
+          page: _page);
       if (!mounted || token != _token) return;
+      if (r.items.isEmpty && _items.isEmpty && _page > 1) {
+        // Random page was past the end of a small result set: start from the top.
+        _page = 1;
+        _loading = false;
+        _load();
+        return;
+      }
+      final fresh = r.items.toList()..shuffle(_rand);
       setState(() {
-        _items.addAll(r.items);
+        _items.addAll(fresh);
         _page = r.nextPage;
         _done = r.done;
         _loading = false;
       });
     } catch (e) {
       if (!mounted || token != _token) return;
+      if (e is PixabayException && e.status == 400 && _page > 1 && _items.isEmpty) {
+        _page = 1;
+        _loading = false;
+        _load();
+        return;
+      }
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -120,13 +205,41 @@ class _ExploreScreenState extends State<ExploreScreen> {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Seg(
-              labels: const ['Photos', 'Live videos'],
-              index: _video ? 1 : 0,
-              onChanged: (i) {
-                _video = i == 1;
-                _reload();
-              },
+            child: SizedBox(
+              height: 38,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _kinds.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (_, i) {
+                  final on = i == _kindIdx;
+                  return GestureDetector(
+                    onTap: () {
+                      if (i == _kindIdx) return;
+                      _kindIdx = i;
+                      _cat = 0;
+                      _query = _kind.cats[0].$2;
+                      _search.clear();
+                      // Frames look best in any shape; everything else starts portrait.
+                      _filters = _filters.copyWith(orientation: i == 4 ? 'all' : 'portrait');
+                      _reload();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: on ? AppColors.pri : AppColors.dim,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(_kinds[i].label,
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: on ? Colors.white : AppColors.ink)),
+                    ),
+                  );
+                },
+              ),
             ),
           ),
           const SizedBox(height: 10),
@@ -184,14 +297,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              itemCount: _categories.length,
+              itemCount: _kind.cats.length,
               separatorBuilder: (_, __) => const SizedBox(width: 8),
               itemBuilder: (_, i) {
                 final on = i == _cat;
                 return GestureDetector(
                   onTap: () {
                     _cat = i;
-                    _query = _categories[i].$2;
+                    _query = _kind.cats[i].$2;
                     _search.clear();
                     _reload();
                   },
@@ -203,7 +316,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: on ? const Color(0xFF14111F) : AppColors.line),
                     ),
-                    child: Text(_categories[i].$1,
+                    child: Text(_kind.cats[i].$1,
                         style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,

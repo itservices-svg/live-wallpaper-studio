@@ -6,7 +6,9 @@ import '../state/studio_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/work_thumb.dart';
+import 'gif_editor_screen.dart';
 import 'motion_editor_screen.dart';
+import 'my_work_screen.dart' show WorkViewer;
 import 'pick_media_screen.dart';
 import 'preview_screen.dart';
 
@@ -36,8 +38,15 @@ Future<void> openWorkForEdit(BuildContext context, SavedTheme t) async {
   }
 }
 
-class StudioScreen extends StatelessWidget {
+class StudioScreen extends StatefulWidget {
   const StudioScreen({super.key});
+
+  @override
+  State<StudioScreen> createState() => _StudioScreenState();
+}
+
+class _StudioScreenState extends State<StudioScreen> {
+  int _mode = 0; // 0 = Make Wallpaper, 1 = Make GIF
 
   void _openPicker(BuildContext context, bool video) {
     studio.openPicker(video: video);
@@ -49,7 +58,11 @@ class StudioScreen extends StatelessWidget {
     return ListenableBuilder(
       listenable: studio,
       builder: (context, _) {
-        final recent = studio.library.where((e) => e.canEdit).take(4).toList();
+        final gifMode = _mode == 1;
+        final recent = studio.library
+            .where((e) => gifMode ? e.isGif : e.canEdit)
+            .take(4)
+            .toList();
         return SafeArea(
           bottom: false,
           child: ListView(
@@ -57,16 +70,29 @@ class StudioScreen extends StatelessWidget {
             children: [
               if (kDebugMode) const _DebugPlatform(),
               const Text('Create Studio', style: AppText.title),
-              const SizedBox(height: 18),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: _CreateCard(video: true, onTap: () => _openPicker(context, true))),
-                  const SizedBox(width: 14),
-                  Expanded(child: _CreateCard(video: false, onTap: () => _openPicker(context, false))),
-                ],
-              ),
               const SizedBox(height: 14),
+              Seg(
+                labels: const ['Make Wallpaper', 'Make GIF'],
+                index: _mode,
+                onChanged: (i) => setState(() => _mode = i),
+              ),
+              const SizedBox(height: 18),
+              if (gifMode)
+                _GifCard(onTap: () {
+                  Navigator.of(context)
+                      .push(MaterialPageRoute(builder: (_) => const GifEditorScreen()));
+                })
+              else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _CreateCard(video: true, onTap: () => _openPicker(context, true))),
+                    const SizedBox(width: 14),
+                    Expanded(child: _CreateCard(video: false, onTap: () => _openPicker(context, false))),
+                  ],
+                ),
+              const SizedBox(height: 14),
+              if (!gifMode)
               Row(
                 children: [
                   Text('▸ No footage? Try ', style: AppText.small),
@@ -93,7 +119,7 @@ class StudioScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  const Text('Recent', style: AppText.h2),
+                  Text(gifMode ? 'Recent GIFs' : 'Recent', style: AppText.h2),
                   const Spacer(),
                   if (studio.library.isNotEmpty)
                     GestureDetector(
@@ -117,7 +143,9 @@ class StudioScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    'Wallpapers you make show up here and in My Work.',
+                    gifMode
+                        ? 'GIFs you make show up here and in My Work.'
+                        : 'Wallpapers you make show up here and in My Work.',
                     style: AppText.small,
                   ),
                 )
@@ -129,7 +157,12 @@ class StudioScreen extends StatelessWidget {
                       if (i > 0) const SizedBox(width: 9),
                       Expanded(
                         child: i < recent.length
-                            ? _RecentTile(item: recent[i], onTap: () => openWorkForEdit(context, recent[i]))
+                            ? _RecentTile(
+                                item: recent[i],
+                                onTap: () => gifMode
+                                    ? Navigator.of(context).push(MaterialPageRoute(
+                                        builder: (_) => WorkViewer(item: recent[i])))
+                                    : openWorkForEdit(context, recent[i]))
                             : const SizedBox.shrink(),
                       ),
                     ],
@@ -167,7 +200,7 @@ class _RecentTile extends StatelessWidget {
                   Positioned(
                       left: 4,
                       top: 4,
-                      child: Pill(item.kind == SavedTheme.live ? 'LIVE' : 'STILL',
+                      child: Pill(item.isGif ? 'GIF' : (item.kind == SavedTheme.live ? 'LIVE' : 'STILL'),
                           live: item.kind == SavedTheme.live)),
                 ],
               ),
@@ -181,6 +214,65 @@ class _RecentTile extends StatelessWidget {
           Text(item.ago,
               maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.small.copyWith(fontSize: 10)),
         ],
+      ),
+    );
+  }
+}
+
+class _GifCard extends StatelessWidget {
+  const _GifCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Ink(
+        height: 150,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.line),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFE7E2F8), Color(0xFFF4F2FB)],
+          ),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF14111F),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.gif_box_outlined, color: Colors.white, size: 30),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('New GIF',
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 3),
+                      Text('Pick videos, choose the frames, crop and join them',
+                          style: AppText.small.copyWith(fontSize: 12)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

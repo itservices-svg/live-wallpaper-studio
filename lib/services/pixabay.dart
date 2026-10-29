@@ -29,8 +29,9 @@ class PixabayItem {
 }
 
 class PixabayException implements Exception {
-  PixabayException(this.message);
+  PixabayException(this.message, {this.status = 0});
   final String message;
+  final int status;
   @override
   String toString() => message;
 }
@@ -67,6 +68,8 @@ class Pixabay {
     required String query,
     required bool video,
     required PixabayFilters filters,
+    String imageType = 'photo',
+    String videoType = 'all',
     int page = 1,
   }) async {
     // The video API has no orientation filter, so fetch more and filter here.
@@ -75,7 +78,7 @@ class Pixabay {
     var p = page;
     var done = false;
     for (var round = 0; round < (clientFilter ? 4 : 1); round++) {
-      final res = await _fetch(query, video, filters, p);
+      final res = await _fetch(query, video, filters, p, imageType, videoType);
       out.addAll(clientFilter
           ? res.items.where((e) => filters.orientation == 'portrait' ? e.height > e.width : e.width >= e.height)
           : res.items);
@@ -90,7 +93,7 @@ class Pixabay {
   }
 
   static Future<({List<PixabayItem> items, int raw, int perPage})> _fetch(
-      String query, bool video, PixabayFilters f, int page) async {
+      String query, bool video, PixabayFilters f, int page, String imageType, String videoType) async {
     if (!hasKey) throw PixabayException('Pixabay key is not set in this build.');
     final perPage = video ? 50 : 30;
     final params = <String, String>{
@@ -100,8 +103,9 @@ class Pixabay {
       'per_page': '$perPage',
       'safesearch': 'true',
       'order': f.order,
+      if (video) 'video_type': videoType,
       if (!video) ...{
-        'image_type': 'photo',
+        'image_type': imageType,
         'orientation': switch (f.orientation) {
           'portrait' => 'vertical',
           'landscape' => 'horizontal',
@@ -118,7 +122,9 @@ class Pixabay {
       final res = await req.close().timeout(const Duration(seconds: 20));
       final body = await res.transform(utf8.decoder).join();
       if (res.statusCode == 429) throw PixabayException('Too many requests. Try again in a minute.');
-      if (res.statusCode != 200) throw PixabayException('Pixabay error (${res.statusCode}).');
+      if (res.statusCode != 200) {
+        throw PixabayException('Pixabay error (${res.statusCode}).', status: res.statusCode);
+      }
       final data = jsonDecode(body) as Map<String, dynamic>;
       final hits = (data['hits'] as List?) ?? const [];
       final out = <PixabayItem>[];

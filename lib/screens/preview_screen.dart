@@ -319,7 +319,7 @@ class GifQuality {
   final int fps;
 }
 
-const _gifPresets = [
+const kGifPresets = [
   GifQuality('Small', '320 px · 10 fps · smallest file', 320, 10),
   GifQuality('Medium', '480 px · 15 fps · good for chats', 480, 15),
   GifQuality('High', '640 px · 20 fps · sharper and smoother', 640, 20),
@@ -341,7 +341,7 @@ class _GifSheet extends StatelessWidget {
             const Text('GIF quality', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             Text('Higher quality makes a bigger file and takes longer.', style: AppText.small),
-            for (final q in _gifPresets)
+            for (final q in kGifPresets)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: OutlinedButton(

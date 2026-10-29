@@ -77,8 +77,8 @@ class Trimmer {
       '-y',
       '-i', mp4,
       '-vf',
-      'fps=$fps,scale=$width:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];'
-          '[b][p]paletteuse=dither=bayer:bayer_scale=4',
+      'fps=$fps,scale=$width:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=256:stats_mode=diff[p];'
+          '[b][p]paletteuse=dither=sierra2_4a:diff_mode=rectangle',
       '-loop', '0',
       out,
     ];

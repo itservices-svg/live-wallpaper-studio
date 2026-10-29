@@ -41,7 +41,10 @@ class _Day {
 }
 
 class PickMediaScreen extends StatefulWidget {
-  const PickMediaScreen({super.key});
+  /// [forGif]: videos only, and the chosen clip is returned to the caller.
+  const PickMediaScreen({super.key, this.forGif = false});
+
+  final bool forGif;
 
   @override
   State<PickMediaScreen> createState() => _PickMediaScreenState();
@@ -216,6 +219,10 @@ class _PickMediaScreenState extends State<PickMediaScreen> {
   void _continue() {
     final it = _sel;
     if (it == null) return;
+    if (widget.forGif) {
+      Navigator.of(context).pop(it);
+      return;
+    }
     studio.loadMedia(it);
     if (it.isVideo) {
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MotionEditorScreen()));
@@ -247,8 +254,8 @@ class _PickMediaScreenState extends State<PickMediaScreen> {
                 Column(
                   children: [
                     AppNav(
-                      title: 'Pick Media',
-                      back: 'Create',
+                      title: widget.forGif ? 'Pick a video' : 'Pick Media',
+                      back: widget.forGif ? 'Back' : 'Create',
                       trailing: NavAction('Albums', onTap: _pickAlbum),
                     ),
                     Padding(
@@ -256,8 +263,10 @@ class _PickMediaScreenState extends State<PickMediaScreen> {
                       child: Row(
                         children: [
                           _Chip('Videos', _fmtInt(_total(true)), video, () => _setKind(true)),
-                          const SizedBox(width: 8),
-                          _Chip('Photos', _fmtInt(_total(false)), !video, () => _setKind(false)),
+                          if (!widget.forGif) ...[
+                            const SizedBox(width: 8),
+                            _Chip('Photos', _fmtInt(_total(false)), !video, () => _setKind(false)),
+                          ],
                           const Spacer(),
                           GestureDetector(
                             onTap: _samples ? null : _pickAlbum,

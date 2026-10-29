@@ -518,6 +518,8 @@ class StudioState extends ChangeNotifier {
     required String file,
     Uint8List? thumb,
     String? idHint,
+    String? name,
+    Duration? length,
   }) async {
     final id = idHint ?? DateTime.now().microsecondsSinceEpoch.toString();
     final ext = file.split('.').last;
@@ -527,9 +529,11 @@ class StudioState extends ChangeNotifier {
       id: id,
       kind: kind,
       assetId: kind == SavedTheme.gif ? '' : (media.asset?.id ?? (media.file != null ? 'file:${media.file}' : 'sample:${media.sceneIndex}')),
-      name: themeName,
-      isVideo: media.isVideo,
-      duration: media.isVideo ? fmtDur(Duration(milliseconds: (span * 1000).round())) : '',
+      name: name ?? themeName,
+      isVideo: length != null || media.isVideo,
+      duration: length != null
+          ? fmtDur(length)
+          : (media.isVideo ? fmtDur(Duration(milliseconds: (span * 1000).round())) : ''),
       createdMs: DateTime.now().millisecondsSinceEpoch,
       file: stored,
       thumb: thumbPath,
