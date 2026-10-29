@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../data/scenes.dart';
 import '../services/library_store.dart';
 import '../state/studio_state.dart';
 import '../theme.dart';

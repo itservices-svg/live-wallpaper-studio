@@ -257,7 +257,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     return GridView.builder(
       controller: _scroll,
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 130),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
