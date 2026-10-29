@@ -4,7 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import 'effects.dart';
-export 'effects.dart' show FxEffect, kFxLabels;
+export 'effects.dart' show TransFx, TransFxPainter, fireFrontY;
 
 enum FrameShape { none, circle, round, heart, star, hexagon }
 
@@ -53,7 +53,6 @@ class FrameStyle {
     this.bg = 0,
     this.art,
     this.anim = FrameAnim.none,
-    this.fx = FxEffect.none,
   });
 
   final FrameShape shape;
@@ -62,7 +61,6 @@ class FrameStyle {
   final int bg; // index into kFrameBgs
   final ui.Image? art; // picture drawn around the shape instead of a plain colour
   final FrameAnim anim;
-  final FxEffect fx; // effect drawn over the whole picture
 
   bool get active => shape != FrameShape.none;
 
@@ -72,10 +70,10 @@ class FrameStyle {
   /// Whether a border is drawn (an animated border always has one).
   bool get hasBorder => kFrameBorders[border.clamp(0, kFrameBorders.length - 1)].color != null || anim != FrameAnim.none;
 
-  bool get animated => (active && hasBorder && anim != FrameAnim.none) || fx != FxEffect.none;
+  bool get animated => active && hasBorder && anim != FrameAnim.none;
 
-  /// Something is drawn over the video (frame and/or effect).
-  bool get needsOverlay => active || fx != FxEffect.none;
+  /// Something is drawn over the video.
+  bool get needsOverlay => active;
 
   /// The same look without any movement.
   FrameStyle still() =>
@@ -150,7 +148,6 @@ class FramePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (style.active) _paintFrame(canvas, size);
-    paintFx(canvas, size, style.fx, _t);
   }
 
   void _paintFrame(Canvas canvas, Size size) {
@@ -264,7 +261,6 @@ class FramePainter extends CustomPainter {
       old.style.bg != style.bg ||
       old.style.art != style.art ||
       old.style.anim != style.anim ||
-      old.style.fx != style.fx ||
       old.phase != phase;
 }
 
