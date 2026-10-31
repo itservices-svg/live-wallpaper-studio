@@ -14,6 +14,7 @@ dependencies:
   video_player: ^2.9.2
   video_thumbnail: ^0.5.3
   flutter_wallpaper_plus: ^1.1.1
+  sensors_plus: ^6.1.1
   path_provider: ^2.1.5
   share_plus: ^10.1.4
   ffmpeg_kit_flutter_new_min_gpl: ^2.4.1

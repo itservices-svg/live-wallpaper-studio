@@ -6,6 +6,7 @@ import '../state/studio_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/work_thumb.dart';
+import 'depth_editor_screen.dart';
 import 'gif_editor_screen.dart';
 import 'motion_editor_screen.dart';
 import 'my_work_screen.dart' show WorkViewer;
@@ -59,6 +60,7 @@ class _StudioScreenState extends State<StudioScreen> {
       listenable: studio,
       builder: (context, _) {
         final gifMode = _mode == 1;
+        final depthMode = _mode == 2;
         final recent = studio.library
             .where((e) => gifMode ? e.isGif : e.canEdit)
             .take(4)
@@ -72,12 +74,17 @@ class _StudioScreenState extends State<StudioScreen> {
               const Text('Create Studio', style: AppText.title),
               const SizedBox(height: 14),
               Seg(
-                labels: const ['Make Wallpaper', 'Make GIF'],
+                labels: const ['Make Wallpaper', 'Make GIF', 'Depth'],
                 index: _mode,
                 onChanged: (i) => setState(() => _mode = i),
               ),
               const SizedBox(height: 18),
-              if (gifMode)
+              if (depthMode)
+                _DepthCard(onTap: () {
+                  Navigator.of(context)
+                      .push(MaterialPageRoute(builder: (_) => const DepthEditorScreen()));
+                })
+              else if (gifMode)
                 _GifCard(onTap: () {
                   Navigator.of(context)
                       .push(MaterialPageRoute(builder: (_) => const GifEditorScreen()));
@@ -92,7 +99,7 @@ class _StudioScreenState extends State<StudioScreen> {
                   ],
                 ),
               const SizedBox(height: 14),
-              if (!gifMode)
+              if (!gifMode && !depthMode)
               Row(
                 children: [
                   Text('▸ No footage? Try ', style: AppText.small),
@@ -416,6 +423,48 @@ class _DebugPlatform extends StatelessWidget {
         ],
         selected: {studio.isIOS},
         onSelectionChanged: (s) => studio.setPlatformOverride(s.first),
+      ),
+    );
+  }
+}
+
+
+class _DepthCard extends StatelessWidget {
+  const _DepthCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.line),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.threed_rotation_rounded, size: 34, color: AppColors.pri),
+            SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Depth wallpaper', style: AppText.h2),
+                  SizedBox(height: 4),
+                  Text(
+                    'Layers that move when you tilt the phone: Moon in a window, Earth in space, or your own photos.',
+                    style: AppText.small,
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: AppColors.sub),
+          ],
+        ),
       ),
     );
   }

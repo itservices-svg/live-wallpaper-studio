@@ -72,3 +72,46 @@ for name in ("build.gradle.kts",):
         src = src.replace('signingConfigs.getByName("debug")', 'signingConfigs.getByName("lws")')
         g.write_text(src)
         print("Signing config added to", g)
+
+# ---- depth (tilt / parallax) live wallpaper: native service + channel -------------------
+import glob
+
+main_acts = glob.glob(str(ANDROID / "app" / "src" / "main" / "kotlin" / "**" / "MainActivity.kt"), recursive=True)
+if main_acts:
+    act = Path(main_acts[0])
+    pkg = re.search(r"^package\s+([\w.]+)", act.read_text(), re.M).group(1)
+    for name in ("MainActivity.kt", "DepthWallpaperService.kt"):
+        body = Path("tools/native", name).read_text().replace("__PKG__", pkg)
+        (act.parent / name).write_text(body)
+    print("Native depth wallpaper written to", act.parent, "package", pkg)
+else:
+    print("WARNING: MainActivity.kt not found; depth wallpaper skipped", file=sys.stderr)
+
+xml_dir = ANDROID / "app" / "src" / "main" / "res" / "xml"
+xml_dir.mkdir(parents=True, exist_ok=True)
+(xml_dir / "depth_wallpaper.xml").write_text(
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    '<wallpaper xmlns:android="http://schemas.android.com/apk/res/android"\n'
+    '    android:thumbnail="@mipmap/ic_launcher" />\n'
+)
+text = manifest_path.read_text()
+if "DepthWallpaperService" not in text:
+    svc = '''    <service
+            android:name=".DepthWallpaperService"
+            android:label="Depth Wallpaper"
+            android:exported="true"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/depth_wallpaper"/>
+        </service>
+    </application>'''
+    text = text.replace("</application>", svc, 1)
+    text = re.sub(r"(<manifest[^>]*>)",
+                  lambda m: m.group(1) + '\n    <uses-feature android:name="android.software.live_wallpaper" android:required="false"/>',
+                  text, count=1)
+    manifest_path.write_text(text)
+    print("Depth service added to manifest")
