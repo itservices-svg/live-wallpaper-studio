@@ -82,6 +82,9 @@ const _kinds = <_Kind>[
     ('Border', 'border frame'),
     ('Vintage', 'vintage frame'),
     ('Polaroid', 'polaroid frame'),
+    ('Broken glass', 'broken glass'),
+    ('Window', 'window frame'),
+    ('Overlay', 'overlay'),
   ]),
 ];
 
@@ -214,7 +217,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     if (_downloading) return;
     setState(() => _downloading = true);
     try {
-      final file = await Pixabay.download(it.url, it.isVideo ? 'mp4' : 'jpg', id: it.id);
+      final file = await Pixabay.download(it.url, it.isVideo ? 'mp4' : _imgExt(it.url), id: it.id);
       if (!mounted) return;
       Navigator.of(context).pop(MediaItem.fromFile(file.path, 'Pixabay ${it.id}',
           video: it.isVideo, seconds: it.seconds));
@@ -543,7 +546,7 @@ class _ExploreViewerState extends State<ExploreViewer> {
     final nav = Navigator.of(context);
     try {
       _video?.pause();
-      final file = await Pixabay.download(item.url, item.isVideo ? 'mp4' : 'jpg', id: item.id);
+      final file = await Pixabay.download(item.url, item.isVideo ? 'mp4' : _imgExt(item.url), id: item.id);
       bool keep(String p) =>
           p == file.path ||
           studio.library.any((t) => t.assetId == 'file:$p' || (t.proj?.contains(p) ?? false));
@@ -672,6 +675,7 @@ class _FilterSheetState extends State<_FilterSheet> {
     ('white', Color(0xFFFFFFFF)),
     ('gray', Color(0xFF9E9E9E)),
     ('black', Color(0xFF212121)),
+    ('transparent', Color(0xFFEDEBF5)),
   ];
 
   @override
@@ -710,8 +714,12 @@ class _FilterSheetState extends State<_FilterSheet> {
                 children: [
                   for (final c in _colors)
                     GestureDetector(
-                      onTap: () => setState(
-                          () => f = f.copyWith(color: f.color == c.$1 ? '' : c.$1)),
+                      onTap: () => setState(() {
+                        final on = f.color == c.$1;
+                        f = f.copyWith(color: on ? '' : c.$1);
+                        // see-through pictures are often small and wide: do not cut them by shape
+                        if (!on && c.$1 == 'transparent') f = f.copyWith(orientation: 'all');
+                      }),
                       child: Container(
                         width: 30,
                         height: 30,
@@ -723,6 +731,9 @@ class _FilterSheetState extends State<_FilterSheet> {
                             width: f.color == c.$1 ? 3 : 1,
                           ),
                         ),
+                        child: c.$1 == 'transparent'
+                            ? const Icon(Icons.grid_4x4_rounded, size: 16, color: AppColors.sub)
+                            : null,
                       ),
                     ),
                 ],
@@ -748,3 +759,6 @@ class _FilterSheetState extends State<_FilterSheet> {
     );
   }
 }
+
+/// Transparent pictures come as PNG: keep the real extension.
+String _imgExt(String url) => url.toLowerCase().split('?').first.endsWith('.png') ? 'png' : 'jpg';

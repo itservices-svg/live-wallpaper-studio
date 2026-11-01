@@ -111,7 +111,7 @@ class Pixabay {
           'landscape' => 'horizontal',
           _ => 'all',
         },
-        if (f.orientation == 'portrait') 'min_height': '1000',
+        if (f.orientation == 'portrait' && f.color != 'transparent') 'min_height': '1000',
         if (f.color.isNotEmpty) 'colors': f.color,
       },
     };
