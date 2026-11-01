@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -172,12 +174,12 @@ class DepthArt {
   }
 
   /// Deep space with a soft nebula and stars.
-  static Future<String> stars() => _png('art_stars', 1080, 2160, (c, s) {
+  static Future<String> stars() => _png('art_stars2', 1080, 2160, (c, s) {
         c.drawRect(Offset.zero & s, Paint()..color = const Color(0xFF04050F));
         final neb = <(double, double, Color)>[
-          (0.3, 0.25, _c(90, 60, 200, 0.35)),
-          (0.75, 0.6, _c(200, 60, 150, 0.25)),
-          (0.4, 0.85, _c(40, 110, 220, 0.3)),
+          (0.3, 0.25, _c(110, 60, 220, 0.6)),
+          (0.75, 0.6, _c(210, 60, 170, 0.4)),
+          (0.4, 0.85, _c(50, 100, 230, 0.45)),
         ];
         for (final n in neb) {
           c.drawRect(
@@ -252,57 +254,6 @@ class DepthArt {
         c.restore();
       });
 
-  static Future<String> earth() => _png('art_earth', 1000, 1000, (c, s) {
-        final S = s.width;
-        final r = S * 0.34;
-        final ctr = Offset(S / 2, S / 2);
-        c.drawCircle(
-          ctr,
-          r * 1.45,
-          Paint()..shader = _radial(ctr, r * 1.45, [_c(90, 170, 255, 0.55), _c(90, 170, 255, 0)], [r / (r * 1.45), 1]),
-        );
-        c.save();
-        c.clipPath(Path()..addOval(Rect.fromCircle(center: ctr, radius: r)));
-        c.drawRect(
-          Offset.zero & s,
-          Paint()
-            ..shader = _radial(ctr, r * 1.05,
-                [const Color(0xFF2F7FD6), const Color(0xFF0F4A9E), const Color(0xFF08285E)], [0, 0.7, 1],
-                focal: Offset(ctr.dx - r * 0.3, ctr.dy - r * 0.3), fr: r * 0.1),
-        );
-        final lands = <List<double>>[
-          [-.3, -.2, .34],
-          [.28, .12, .28],
-          [-.05, .45, .22],
-          [.1, -.5, .18],
-          [-.55, .3, .14],
-        ];
-        for (var i = 0; i < lands.length; i++) {
-          final l = lands[i];
-          _blob(c, ctr.dx + l[0] * r, ctr.dy + l[1] * r, l[2] * r, 22, 20 + i, const Color(0xFF3F8F46));
-          _blob(c, ctr.dx + l[0] * r + r * 0.03, ctr.dy + l[1] * r, l[2] * r * 0.6, 18, 40 + i,
-              _c(176, 150, 84, 0.75));
-        }
-        final rnd = math.Random(11);
-        for (var i = 0; i < 9; i++) {
-          _blob(c, ctr.dx + (rnd.nextDouble() - 0.5) * r * 1.8, ctr.dy + (rnd.nextDouble() - 0.5) * r * 1.6,
-              r * (0.12 + rnd.nextDouble() * 0.2), 16, 60 + i, _c(255, 255, 255, 0.55), blur: r * 0.05);
-        }
-        _blob(c, ctr.dx, ctr.dy - r * 0.98, r * 0.35, 14, 99, _c(240, 248, 255, 0.9), blur: r * 0.03);
-        c.drawRect(
-          Offset.zero & s,
-          Paint()..shader = _radial(ctr, r, [_c(120, 190, 255, 0), _c(120, 190, 255, 0.55)], [0.7, 1]),
-        );
-        c.drawRect(
-          Offset.zero & s,
-          Paint()
-            ..shader = _radial(Offset(ctr.dx - r * 0.2, ctr.dy - r * 0.2), r * 1.6,
-                [_c(0, 0, 0, 0), _c(0, 5, 20, 0.2), _c(0, 5, 20, 0.85)], [0, 0.55, 1],
-                focal: Offset(ctr.dx - r * 0.5, ctr.dy - r * 0.5), fr: r * 0.4),
-        );
-        c.restore();
-      });
-
   /// A wooden window frame: the panes are see-through, so what is behind shows.
   static Future<String> window() => _png('art_window', 1080, 2160, (c, s) {
         final W = s.width, H = s.height;
@@ -353,188 +304,262 @@ class DepthArt {
         c.restore();
       });
 
-  /// A glowing circuit board with a chip: a good "far" picture.
-  static Future<String> board() => _png('art_board', 1080, 2160, (c, s) {
-        final W = s.width, H = s.height;
-        final u = W / 540;
+  // ---- tinted broken glass + circuit board
+
+  static const List<(String, List<int>)> tints = [
+    ('Blue', [60, 120, 255]),
+    ('Red', [255, 50, 60]),
+    ('Purple', [170, 60, 255]),
+    ('Green', [40, 220, 120]),
+    ('Cyan', [40, 200, 230]),
+  ];
+
+  /// A glowing circuit board with a chip, in the colour [t] (index into [tints]).
+  static Future<String> board([int t = 0]) => _png('ov_boardx_$t', 1080, 2160, (c, s) {
+        c.scale(s.width / 540);
+        final tr = tints[t].$2[0], tg = tints[t].$2[1], tb = tints[t].$2[2];
         final rnd = math.Random(3);
         double r() => rnd.nextDouble();
+        Color line(double a) => Color.fromRGBO(
+            math.min(255, (tr * 0.35 + 80).round()), math.min(255, (tg * 0.5 + 90).round()),
+            math.min(255, (tb * 0.5 + 120).round()), a.clamp(0.0, 1.0).toDouble());
         c.drawRect(
-          Offset.zero & s,
+          const Rect.fromLTWH(0, 0, _w, _h),
           Paint()
-            ..shader = ui.Gradient.linear(Offset.zero, Offset(0, H),
-                [const Color(0xFF0A1240), const Color(0xFF050A2A)]),
+            ..shader = ui.Gradient.linear(Offset.zero, const Offset(0, _h), [
+              Color.fromRGBO((tr * 0.08).round(), (tg * 0.1).round(), (tb * 0.22).round(), 1),
+              Color.fromRGBO((tr * 0.03).round(), (tg * 0.04).round(), (tb * 0.12).round(), 1),
+            ]),
         );
-        for (var i = 0; i < 90; i++) {
-          var x = r() * W, y = r() * H;
+        for (var i = 0; i < 150; i++) {
+          var x = r() * _w, y = r() * _h;
           final p = Path()..moveTo(x, y);
           final n = 2 + (r() * 3).floor();
           for (var k = 0; k < n; k++) {
             if (r() < 0.5) {
-              x += (r() - 0.5) * W * 0.35;
+              x += (r() - 0.5) * _w * 0.35;
             } else {
-              y += (r() - 0.5) * H * 0.2;
+              y += (r() - 0.5) * _h * 0.2;
             }
             p.lineTo(x, y);
           }
-          c.drawPath(
-            p,
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeCap = StrokeCap.round
-              ..strokeWidth = W * (0.002 + r() * 0.004)
-              ..color = _c(40 + (r() * 60).floor(), 120 + (r() * 100).floor(), 255, 0.25 + r() * 0.4),
-          );
-          c.drawCircle(Offset(x, y), W * 0.006, Paint()..color = _c(120, 220, 255, 0.8));
+          c.drawPath(p, _stroke(line(0.25 + r() * 0.4), _w * (0.002 + r() * 0.004)));
         }
-        for (var i = 0; i < 46; i++) {
-          final w = W * (0.03 + r() * 0.08), h = H * (0.012 + r() * 0.02);
-          final x = r() * W, y = r() * H;
+        for (var i = 0; i < 70; i++) {
+          final w = _w * (0.03 + r() * 0.08), h = _h * (0.012 + r() * 0.02);
+          final x = r() * _w, y = r() * _h;
           final rc = Rect.fromLTWH(x, y, w, h);
-          c.drawRect(rc, Paint()..color = _c(10 + (r() * 30).floor(), 30 + (r() * 40).floor(), 90 + (r() * 80).floor(), 0.9));
-          c.drawRect(
-              rc,
-              Paint()
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = 2 * u
-                ..color = _c(100, 200, 255, 0.6));
+          c.drawRect(rc, Paint()..color = Color.fromRGBO((tr * 0.1).round(), (tg * 0.15).round(), (tb * 0.4).round(), 0.9));
+          c.drawRect(rc, _stroke(line(0.6), 1.5, cap: StrokeCap.butt));
           for (var q = 0; q < 6; q++) {
-            final pn = Paint()..color = _c(180, 230, 255, 0.7);
-            c.drawRect(Rect.fromLTWH(x + q * w / 6, y - 4 * u, w / 12, 4 * u), pn);
-            c.drawRect(Rect.fromLTWH(x + q * w / 6, y + h, w / 12, 4 * u), pn);
+            final pn = Paint()..color = line(0.7);
+            c.drawRect(Rect.fromLTWH(x + q * w / 6, y - 3, w / 12, 3), pn);
+            c.drawRect(Rect.fromLTWH(x + q * w / 6, y + h, w / 12, 3), pn);
           }
         }
-        final ctr = Offset(W / 2, H / 2);
-        final cw = W * 0.5;
+        const cw = _w * 0.5;
+        const ctr = Offset(_w / 2, _h / 2);
         c.drawRect(
-          Offset.zero & s,
-          Paint()..shader = _radial(ctr, cw, [_c(60, 120, 255, 0.45), _c(60, 120, 255, 0)], [0, 1]),
+          const Rect.fromLTWH(0, 0, _w, _h),
+          Paint()
+            ..shader = _radial(ctr, cw, [Color.fromRGBO(tr, tg, tb, 0.5), Color.fromRGBO(tr, tg, tb, 0)], [0, 1]),
         );
         final chip = Rect.fromLTWH(ctr.dx - cw / 2, ctr.dy - cw / 2, cw, cw);
-        c.drawRect(chip, Paint()..color = const Color(0xFF2A2A46));
-        c.drawRect(
-            chip,
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 4 * u
-              ..color = const Color(0xFF8AB4FF));
-        final pin = Paint()..color = _c(150, 210, 255, 0.8);
+        c.drawRect(chip, Paint()..color = const Color(0xFF2A2A40));
+        c.drawRect(chip, _stroke(line(0.9), 3, cap: StrokeCap.butt));
+        final pn = Paint()..color = line(0.8);
         for (var q = 0; q < 28; q++) {
-          final t = (q + 0.5) * cw / 28;
-          c.drawRect(Rect.fromLTWH(chip.left + t, chip.top - 14 * u, 3 * u, 14 * u), pin);
-          c.drawRect(Rect.fromLTWH(chip.left + t, chip.bottom, 3 * u, 14 * u), pin);
-          c.drawRect(Rect.fromLTWH(chip.left - 14 * u, chip.top + t, 14 * u, 3 * u), pin);
-          c.drawRect(Rect.fromLTWH(chip.right, chip.top + t, 14 * u, 3 * u), pin);
+          final tt = (q + 0.5) * cw / 28;
+          c.drawRect(Rect.fromLTWH(chip.left + tt, chip.top - 7, 1.5, 7), pn);
+          c.drawRect(Rect.fromLTWH(chip.left + tt, chip.bottom, 1.5, 7), pn);
+          c.drawRect(Rect.fromLTWH(chip.left - 7, chip.top + tt, 7, 1.5), pn);
+          c.drawRect(Rect.fromLTWH(chip.right, chip.top + tt, 7, 1.5), pn);
         }
-        c.drawCircle(
-            ctr,
-            cw * 0.25,
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = W * 0.012
-              ..color = _c(20, 20, 30, 0.8));
       });
 
-  /// Shattered glass with a see-through hole in the middle: a good "near" picture.
-  static Future<String> glass() => _png('art_glass', 1080, 2160, (c, s) {
-        final W = s.width, H = s.height;
-        final u = W / 540;
-        final rnd = math.Random(9);
+  /// Shattered glass with a jagged hole in the middle, in the colour [t].
+  static Future<String> glass([int t = 0]) => _png('ov_glassx_$t', 1080, 2160, (c, s) {
+        c.scale(s.width / 540);
+        final tr = tints[t].$2[0], tg = tints[t].$2[1], tb = tints[t].$2[2];
+        Color col(double a, [double k = 1]) => Color.fromRGBO(
+            math.min(255, (tr * k).round()), math.min(255, (tg * k).round()), math.min(255, (tb * k).round()),
+            a.clamp(0.0, 1.0).toDouble());
+        final rnd = math.Random(77);
         double r() => rnd.nextDouble();
-        final cx = W / 2, cy = H * 0.5;
-        const n = 22;
+        const cx = _w * 0.5, cy = _h * 0.5;
+        const nr = 20;
+        final rays = <double>[];
+        var a0 = r() * 6.28;
+        for (var j = 0; j < nr; j++) {
+          a0 += 6.2832 / nr * (0.6 + r() * 0.8);
+          rays.add(a0);
+        }
+        final span = rays.last - rays.first;
+        for (var j = 0; j < nr; j++) {
+          rays[j] = rays[0] + (rays[j] - rays[0]) * (6.2832 / (span + 6.2832 / nr));
+        }
+        const radii = [0.0, 0.9, 2.1, 3.6, 5.6];
+        const base = _w * 0.36;
+        final ph1 = r() * 6, ph2 = r() * 6, ph3 = r() * 6;
+        double holeR(double a) =>
+            base * (0.82 + 0.2 * math.sin(a * 2 + ph1) + 0.12 * math.sin(a * 3 + ph2) + 0.07 * math.sin(a * 5 + ph3));
+        final v = <List<List<double>>>[];
+        for (var k = 0; k < radii.length; k++) {
+          final row = <List<double>>[];
+          for (var j = 0; j < nr; j++) {
+            final a = rays[j] + (r() - 0.5) * 0.04;
+            final rad = k == 0
+                ? holeR(a) * (0.8 + r() * 0.4)
+                : holeR(a) + (radii[k] * _w * 0.2) * (0.85 + r() * 0.3);
+            row.add([cx + math.cos(a) * rad, cy + math.sin(a) * rad * 1.25]);
+          }
+          v.add(row);
+        }
         final hole = Path();
-        for (var i = 0; i < n; i++) {
-          final a = i / n * math.pi * 2;
-          final k = (0.26 + r() * 0.12) * W;
-          final k2 = k * (1.05 + 0.25 * math.sin(a * 2));
-          final x = cx + math.cos(a) * k, y = cy + math.sin(a) * k2 * 1.25;
-          if (i == 0) {
-            hole.moveTo(x, y);
+        for (var j = 0; j < nr; j++) {
+          if (j == 0) {
+            hole.moveTo(v[0][j][0], v[0][j][1]);
           } else {
-            hole.lineTo(x, y);
+            hole.lineTo(v[0][j][0], v[0][j][1]);
           }
         }
         hole.close();
-        c.save();
-        final clip = Path()
-          ..fillType = PathFillType.evenOdd
-          ..addRect(Offset.zero & s)
-          ..addPath(hole, Offset.zero);
-        c.clipPath(clip);
-        c.drawRect(
-          Offset.zero & s,
-          Paint()
-            ..shader = ui.Gradient.linear(Offset.zero, Offset(W, H),
-                [_c(40, 90, 255, 0.55), _c(90, 160, 255, 0.35), _c(30, 70, 230, 0.6)], [0, 0.5, 1]),
+        c.drawPath(
+          Path()
+            ..fillType = PathFillType.evenOdd
+            ..addRect(const Rect.fromLTWH(0, 0, _w, _h))
+            ..addPath(hole, Offset.zero),
+          Paint()..color = col(0.06),
         );
-        for (var i = 0; i < 36; i++) {
-          final a = r() * math.pi * 2, w = 0.1 + r() * 0.2;
-          final p = Path()
-            ..moveTo(cx, cy)
-            ..lineTo(cx + math.cos(a) * W * 1.5, cy + math.sin(a) * W * 1.8)
-            ..lineTo(cx + math.cos(a + w) * W * 1.5, cy + math.sin(a + w) * W * 1.8)
-            ..close();
-          c.drawPath(p, Paint()..color = r() < 0.5 ? _c(255, 255, 255, 0.06) : _c(0, 0, 40, 0.10));
-        }
-        for (var i = 0; i < 70; i++) {
-          final a = r() * math.pi * 2;
-          final rr = W * 0.2;
-          var x = cx + math.cos(a) * rr, y = cy + math.sin(a) * rr * 1.2;
-          final p = Path()..moveTo(x, y);
-          final len = W * (0.2 + r() * 0.7);
-          var aa = a;
-          for (var k = 0; k < 8; k++) {
-            aa += (r() - 0.5) * 0.35;
-            final st = len / 8;
-            x += math.cos(aa) * st;
-            y += math.sin(aa) * st * 1.2;
-            p.lineTo(x, y);
-          }
-          c.drawPath(
-              p,
-              Paint()
-                ..style = PaintingStyle.stroke
-                ..strokeCap = StrokeCap.round
-                ..strokeWidth = (1 + r() * 2.5) * u
-                ..color = _c(190, 240, 255, 0.35 + r() * 0.5));
-        }
-        for (final m in [0.36, 0.5, 0.68, 0.9]) {
-          final p = Path();
-          const steps = 40;
-          for (var i = 0; i <= steps; i++) {
-            final a = i / steps * math.pi * 2;
-            final rr = W * m * (0.94 + r() * 0.12);
-            final x = cx + math.cos(a) * rr, y = cy + math.sin(a) * rr * 1.2;
-            if (i == 0) {
-              p.moveTo(x, y);
-            } else {
-              p.lineTo(x, y);
+        final cells = <Path>[];
+        for (var k = 0; k < radii.length - 1; k++) {
+          for (var j = 0; j < nr; j++) {
+            final j2 = (j + 1) % nr;
+            final p0 = v[k][j], p1 = v[k][j2], p2 = v[k + 1][j2], p3 = v[k + 1][j];
+            final pts = <List<double>>[p0, p1, p2, p3];
+            if (k == 0) {
+              final mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2;
+              final dx = mx - cx, dy = my - cy;
+              final l = math.sqrt(dx * dx + dy * dy);
+              final bite = (r() - 0.5) * _w * 0.13;
+              pts
+                ..clear()
+                ..addAll([p0, [mx + dx / l * bite, my + dy / l * bite], p1, p2, p3]);
             }
-          }
-          c.drawPath(
-              p,
+            final path = Path()..moveTo(pts[0][0], pts[0][1]);
+            for (var i = 1; i < pts.length; i++) {
+              path.lineTo(pts[i][0], pts[i][1]);
+            }
+            path.close();
+            cells.add(path);
+            final bx = (p0[0] + p2[0]) / 2, by = (p0[1] + p2[1]) / 2;
+            final ang = r() * 6.28, len = 60 + r() * 80;
+            final bright = r();
+            c.drawPath(
+              path,
               Paint()
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = 1.5 * u
-                ..color = _c(170, 230, 255, 0.4));
+                ..shader = ui.Gradient.linear(
+                  Offset(bx - math.cos(ang) * len, by - math.sin(ang) * len),
+                  Offset(bx + math.cos(ang) * len, by + math.sin(ang) * len),
+                  [col(0.02 + bright * 0.25, 1.4), col(0.06 + r() * 0.12, 0.9), col(0.18 + r() * 0.25, 0.5)],
+                  [0, 0.5, 1],
+                ),
+            );
+            if (r() < 0.25) c.drawPath(path, Paint()..color = Color.fromRGBO(255, 255, 255, 0.05 + r() * 0.12));
+            if (r() < 0.12) c.drawPath(path, Paint()..color = Color.fromRGBO(0, 0, 30, 0.10 + r() * 0.15));
+            c.save();
+            c.clipPath(path);
+            final n = (r() * 4).floor();
+            for (var i = 0; i < n; i++) {
+              final sx = bx + (r() - 0.5) * 70, sy = by + (r() - 0.5) * 70, a = r() * 6.28, l = 14 + r() * 60;
+              c.drawLine(Offset(sx, sy), Offset(sx + math.cos(a) * l, sy + math.sin(a) * l),
+                  _stroke(Color.fromRGBO(255, 255, 255, 0.12 + r() * 0.25), 0.5));
+            }
+            if (r() < 0.7) {
+              final a = math.atan2(by - cy, bx - cx);
+              for (var i = 0; i < 14; i++) {
+                final o = (i - 7) * 4.0;
+                final ox = bx + math.cos(a + 1.57) * o, oy = by + math.sin(a + 1.57) * o;
+                c.drawLine(Offset(ox - math.cos(a) * 70, oy - math.sin(a) * 70),
+                    Offset(ox + math.cos(a) * 70, oy + math.sin(a) * 70),
+                    _stroke(Color.fromRGBO(255, 255, 255, 0.08 + r() * 0.14), 0.7));
+              }
+            }
+            c.restore();
+          }
         }
-        c.restore();
-        c.drawPath(
-            hole,
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 14 * u
-              ..color = _c(79, 208, 255, 0.8)
-              ..maskFilter = MaskFilter.blur(BlurStyle.normal, 12 * u));
-        c.drawPath(
-            hole,
-            Paint()
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 6 * u
-              ..strokeJoin = StrokeJoin.round
-              ..color = _c(200, 245, 255, 0.95));
+        for (final cell in cells) {
+          c.drawPath(cell, _stroke(col(0.35, 1.1), 3.5, blur: 3));
+        }
+        for (final cell in cells) {
+          c.drawPath(cell, _stroke(const Color.fromRGBO(0, 0, 20, 0.3), 1.8));
+        }
+        for (final cell in cells) {
+          c.drawPath(cell, _stroke(Color.fromRGBO(235, 250, 255, 0.35 + r() * 0.5), 0.6 + r() * 0.9));
+        }
+        c.drawPath(hole, _stroke(col(0.9, 1.3), 8, blur: 5));
+        c.drawPath(hole, _stroke(const Color.fromRGBO(235, 252, 255, 0.9), 2));
+        for (var i = 0; i < 260; i++) {
+          final a = r() * 6.28, rad = base * (1 + r() * 3.2);
+          c.drawCircle(Offset(cx + math.cos(a) * rad, cy + math.sin(a) * rad * 1.25), 0.5 + r() * 1.4,
+              Paint()..color = Color.fromRGBO(255, 255, 255, r() * 0.5));
+        }
       });
+
+  // ---- real-looking Earth drawn from NASA-style textures
+
+  static Future<ui.Image> _fromRgba(Uint8List px, int w, int h) {
+    final comp = Completer<ui.Image>();
+    ui.decodeImageFromPixels(px, w, h, ui.PixelFormat.rgba8888, comp.complete);
+    return comp.future;
+  }
+
+  static Future<(Uint8List, int, int)> _texture(String asset) async {
+    final data = await rootBundle.load(asset);
+    final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+    final img = (await codec.getNextFrame()).image;
+    final bytes = await img.toByteData(format: ui.ImageByteFormat.rawStraightRgba);
+    final out = (bytes!.buffer.asUint8List(), img.width, img.height);
+    img.dispose();
+    return out;
+  }
+
+  /// A big photo-like Earth on a transparent screen-sized picture. [mode]: day | dusk | night.
+  static Future<String> earth(String mode) async {
+    final d = await DepthService.dir();
+    final path = '${d.path}/ov_earth_$mode.png';
+    if (await File(path).exists()) return path;
+    final day = await _texture('assets/earth/day.jpg');
+    final lights = await _texture('assets/earth/lights.png');
+    final clouds = await _texture('assets/earth/clouds.png');
+    const size = 1270;
+    final light = switch (mode) {
+      'day' => [-0.45, 0.4, 0.55],
+      'dusk' => [-0.8, 0.55, -0.1],
+      _ => [-1.0, 0.8, -0.6],
+    };
+    final px = await compute(_earthPixels, <String, Object>{
+      'day': day.$1, 'dw': day.$2, 'dh': day.$3,
+      'lights': lights.$1, 'lw': lights.$2, 'lh': lights.$3,
+      'clouds': clouds.$1, 'cw': clouds.$2, 'ch': clouds.$3,
+      'size': size,
+      'r': size / 2 / 1.12,
+      'lon': 65.0,
+      'tilt': 22.0,
+      'light': light,
+      'night': mode == 'night',
+    });
+    final img = await _fromRgba(px, size, size);
+    final rec = ui.PictureRecorder();
+    final canvas = Canvas(rec);
+    canvas.drawImage(img, Offset((1080 - size) / 2, 1160 - size / 2), Paint()..filterQuality = FilterQuality.high);
+    final full = await rec.endRecording().toImage(1080, 2160);
+    final data = await full.toByteData(format: ui.ImageByteFormat.png);
+    img.dispose();
+    full.dispose();
+    await File(path).writeAsBytes(data!.buffer.asUint8List(), flush: true);
+    return path;
+  }
 
   // ---- overlay library: full-screen pictures drawn in code (designed on a 540 x 1080 canvas)
 
@@ -928,27 +953,141 @@ class DepthArt {
 
   /// Every full-screen picture of the library: back pictures first, then front overlays.
   static final List<ArtDef> catalog = [
-    ArtDef('stars', 'Stars', false, stars),
-    ArtDef('board', 'Circuit board', false, board),
-    ArtDef('glass', 'Broken glass', true, glass),
-    ArtDef('crack', 'Cracked screen', true, crackedScreen),
-    ArtDef('window', 'Window', true, window),
-    ArtDef('porthole', 'Porthole', true, porthole),
-    ArtDef('vines', 'Vines', true, vines),
-    ArtDef('torn', 'Torn paper', true, tornPaper),
-    ArtDef('frost', 'Frost', true, frost),
-    ArtDef('rays', 'Light rays', true, lightRays),
-    ArtDef('smoke', 'Fog', true, smoke),
-    ArtDef('bubbles', 'Bubbles', true, bubbles),
+    ArtDef('stars', 'Stars and nebula', false, (t) => stars()),
+    ArtDef('board', 'Circuit board', false, (t) => board(t), tintable: true),
+    ArtDef('glass', 'Broken glass', true, (t) => glass(t), tintable: true),
+    ArtDef('earth_night', 'Earth (night)', true, (t) => earth('night')),
+    ArtDef('earth_dusk', 'Earth (dusk)', true, (t) => earth('dusk')),
+    ArtDef('earth_day', 'Earth (day)', true, (t) => earth('day')),
+    ArtDef('crack', 'Cracked screen', true, (t) => crackedScreen()),
+    ArtDef('window', 'Window', true, (t) => window()),
+    ArtDef('porthole', 'Porthole', true, (t) => porthole()),
+    ArtDef('vines', 'Vines', true, (t) => vines()),
+    ArtDef('torn', 'Torn paper', true, (t) => tornPaper()),
+    ArtDef('frost', 'Frost', true, (t) => frost()),
+    ArtDef('rays', 'Light rays', true, (t) => lightRays()),
+    ArtDef('smoke', 'Fog', true, (t) => smoke()),
+    ArtDef('bubbles', 'Bubbles', true, (t) => bubbles()),
   ];
 }
 
 /// One picture of the built-in library. [front] = an overlay with see-through parts.
 class ArtDef {
-  const ArtDef(this.id, this.name, this.front, this.build);
+  const ArtDef(this.id, this.name, this.front, this.build, {this.tintable = false});
 
   final String id;
   final String name;
   final bool front;
-  final Future<String> Function() build;
+  final Future<String> Function(int tint) build;
+
+  /// The picture can be made in the colours of [DepthArt.tints].
+  final bool tintable;
+}
+
+/// Runs in a background isolate: the Earth sphere (premultiplied RGBA) from the textures.
+Uint8List _earthPixels(Map<String, Object> a) {
+  final day = a['day'] as Uint8List;
+  final dw = a['dw'] as int, dh = a['dh'] as int;
+  final lights = a['lights'] as Uint8List;
+  final lw = a['lw'] as int, lh = a['lh'] as int;
+  final clouds = a['clouds'] as Uint8List;
+  final cw = a['cw'] as int, ch = a['ch'] as int;
+  final size = a['size'] as int;
+  final rad = a['r'] as double;
+  final lon0 = (a['lon'] as double) * math.pi / 180;
+  final tilt = (a['tilt'] as double) * math.pi / 180;
+  final lv = (a['light'] as List).map((e) => (e as num).toDouble()).toList();
+  final ll = math.sqrt(lv[0] * lv[0] + lv[1] * lv[1] + lv[2] * lv[2]);
+  final lx = lv[0] / ll, ly = lv[1] / ll, lz = lv[2] / ll;
+  final night = a['night'] as bool;
+  final out = Uint8List(size * size * 4);
+  final cx = size / 2, cy = size / 2;
+  final st = math.sin(tilt), ct = math.cos(tilt);
+  final o = List<double>.filled(4, 0);
+
+  // bilinear sample, wraps horizontally; channel 3 can be read as alpha
+  void sample(Uint8List img, int w, int h, double tx, double ty) {
+    final fx = tx * (w - 1), fy = (ty * (h - 1)).clamp(0.0, h - 1.0).toDouble();
+    final x0 = fx.floor(), y0 = fy.floor();
+    final wx = fx - x0, wy = fy - y0;
+    final x1 = (x0 + 1) % w, y1 = math.min(h - 1, y0 + 1);
+    final xa = x0 % w;
+    for (var ch2 = 0; ch2 < 4; ch2++) {
+      final a00 = img[(y0 * w + xa) * 4 + ch2], a10 = img[(y0 * w + x1) * 4 + ch2];
+      final a01 = img[(y1 * w + xa) * 4 + ch2], a11 = img[(y1 * w + x1) * 4 + ch2];
+      o[ch2] = ((a00 * (1 - wx) + a10 * wx) * (1 - wy) + (a01 * (1 - wx) + a11 * wx) * wy) / 255.0;
+    }
+  }
+
+  double smooth(double x) {
+    final t = x.clamp(0.0, 1.0).toDouble();
+    return t * t * (3 - 2 * t);
+  }
+
+  for (var py = 0; py < size; py++) {
+    for (var px = 0; px < size; px++) {
+      final u = (px - cx) / rad, v = (cy - py) / rad;
+      final r2 = u * u + v * v;
+      final d = math.sqrt(r2);
+      if (d > 1.25) continue;
+      double r = 0, g = 0, b = 0, alpha = 0;
+      if (d <= 1) {
+        final z = math.sqrt(math.max(0.0, 1 - r2));
+        final yy = v * ct + z * st, zz = -v * st + z * ct;
+        final lat = math.asin(yy.clamp(-1.0, 1.0));
+        var lon = math.atan2(u, zz) + lon0;
+        lon = (lon + math.pi) % (2 * math.pi) - math.pi;
+        final tx = (lon + math.pi) / (2 * math.pi), ty = (math.pi / 2 - lat) / math.pi;
+        sample(day, dw, dh, tx, ty);
+        final dr = o[0], dg = o[1], db = o[2];
+        sample(lights, lw, lh, tx, ty);
+        final nr = o[0], ng = o[1], nb = o[2];
+        sample(clouds, cw, ch, tx, ty);
+        final cl = o[3];
+        final ndl = u * lx + v * ly + z * lz;
+        final dayf = smooth((ndl + 0.12) / 0.4);
+        final shade = (0.18 + ndl).clamp(0.05, 1.1).toDouble();
+        final dayR = (dr + cl * 0.75) * shade, dayG = (dg + cl * 0.75) * shade, dayB = (db + cl * 0.75) * shade;
+        final nbz = 0.6 + 0.6 * z;
+        final gain = night ? 1.9 : 1.5;
+        final lr = math.pow(nr, 0.8).toDouble() * gain,
+            lg = math.pow(ng, 0.8).toDouble() * gain * 0.82,
+            lb = math.pow(nb, 0.8).toDouble() * gain * 0.45;
+        final cm = 1 - 0.5 * cl;
+        final cn = cl * (0.5 + 0.5 * (ndl + 0.3).clamp(0.0, 1.0));
+        final nightR = 0.015 * nbz + lr * cm + cn * 0.10;
+        final nightG = 0.02 * nbz + lg * cm + cn * 0.12;
+        final nightB = 0.07 * nbz + lb * cm + cn * 0.22;
+        r = dayR * dayf + nightR * (1 - dayf);
+        g = dayG * dayf + nightG * (1 - dayf);
+        b = dayB * dayf + nightB * (1 - dayf);
+        final fres = math.pow(1 - z, 3.0).toDouble();
+        final atmK = fres * (0.35 + 0.9 * (ndl + 0.35).clamp(0.0, 1.0));
+        r += 0.25 * atmK;
+        g += 0.5 * atmK;
+        b += 1.0 * atmK;
+        alpha = ((1 - d) * rad).clamp(0.0, 1.0).toDouble();
+        r *= alpha;
+        g *= alpha;
+        b *= alpha;
+      }
+      // outer atmosphere glow
+      var glow = 0.0;
+      if (d > 1) {
+        final k = (d - 1) / 0.045;
+        glow = math.exp(-k * k * 0.9) * 0.65;
+        r = 0.25 * glow;
+        g = 0.5 * glow;
+        b = 1.0 * glow;
+        alpha = glow;
+      }
+      final i = (py * size + px) * 4;
+      final aa = alpha.clamp(0.0, 1.0).toDouble();
+      out[i] = (math.min(r, aa).clamp(0.0, 1.0) * 255).round();
+      out[i + 1] = (math.min(g, aa).clamp(0.0, 1.0) * 255).round();
+      out[i + 2] = (math.min(b, aa).clamp(0.0, 1.0) * 255).round();
+      out[i + 3] = (aa * 255).round();
+    }
+  }
+  return out;
 }

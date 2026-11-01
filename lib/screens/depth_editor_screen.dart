@@ -225,8 +225,7 @@ class _DepthEditorScreenState extends State<DepthEditorScreen> with SingleTicker
           ..add(DepthLayer(path: await DepthArt.board(), name: 'Back', d: 0.15, k: 1.16))
           ..add(DepthLayer(path: await DepthArt.glass(), name: 'Front', d: 0.8, k: 1.16));
       } else if (kind == 'earth') {
-        layers.add(DepthLayer(
-            path: await DepthArt.earth(), name: 'Earth', d: 0.4, cover: false, w: 1.5, x: 0.5, y: 0.62, f: 0.01));
+        layers.add(DepthLayer(path: await DepthArt.earth('night'), name: 'Earth', d: 0.4, f: 0.006));
       }
       _p.layers
         ..clear()
@@ -249,8 +248,7 @@ class _DepthEditorScreenState extends State<DepthEditorScreen> with SingleTicker
           l = DepthLayer(
               path: await DepthArt.moon(), name: 'Moon', d: 0.3, cover: false, w: 1.3, x: 0.5, y: 0.4, f: 0.008);
         case 'earth':
-          l = DepthLayer(
-              path: await DepthArt.earth(), name: 'Earth', d: 0.4, cover: false, w: 1.5, x: 0.5, y: 0.62, f: 0.01);
+          l = DepthLayer(path: await DepthArt.earth('night'), name: 'Earth', d: 0.4, f: 0.006);
         default:
           l = DepthLayer(path: await DepthArt.window(), name: 'Window', d: 0.9);
       }
