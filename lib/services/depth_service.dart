@@ -352,4 +352,187 @@ class DepthArt {
         c.drawPath(shine, Paint()..color = _c(255, 255, 255, 0.07));
         c.restore();
       });
+
+  /// A glowing circuit board with a chip: a good "far" picture.
+  static Future<String> board() => _png('art_board', 1080, 2160, (c, s) {
+        final W = s.width, H = s.height;
+        final u = W / 540;
+        final rnd = math.Random(3);
+        double r() => rnd.nextDouble();
+        c.drawRect(
+          Offset.zero & s,
+          Paint()
+            ..shader = ui.Gradient.linear(Offset.zero, Offset(0, H),
+                [const Color(0xFF0A1240), const Color(0xFF050A2A)]),
+        );
+        for (var i = 0; i < 90; i++) {
+          var x = r() * W, y = r() * H;
+          final p = Path()..moveTo(x, y);
+          final n = 2 + (r() * 3).floor();
+          for (var k = 0; k < n; k++) {
+            if (r() < 0.5) {
+              x += (r() - 0.5) * W * 0.35;
+            } else {
+              y += (r() - 0.5) * H * 0.2;
+            }
+            p.lineTo(x, y);
+          }
+          c.drawPath(
+            p,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeCap = StrokeCap.round
+              ..strokeWidth = W * (0.002 + r() * 0.004)
+              ..color = _c(40 + (r() * 60).floor(), 120 + (r() * 100).floor(), 255, 0.25 + r() * 0.4),
+          );
+          c.drawCircle(Offset(x, y), W * 0.006, Paint()..color = _c(120, 220, 255, 0.8));
+        }
+        for (var i = 0; i < 46; i++) {
+          final w = W * (0.03 + r() * 0.08), h = H * (0.012 + r() * 0.02);
+          final x = r() * W, y = r() * H;
+          final rc = Rect.fromLTWH(x, y, w, h);
+          c.drawRect(rc, Paint()..color = _c(10 + (r() * 30).floor(), 30 + (r() * 40).floor(), 90 + (r() * 80).floor(), 0.9));
+          c.drawRect(
+              rc,
+              Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 2 * u
+                ..color = _c(100, 200, 255, 0.6));
+          for (var q = 0; q < 6; q++) {
+            final pn = Paint()..color = _c(180, 230, 255, 0.7);
+            c.drawRect(Rect.fromLTWH(x + q * w / 6, y - 4 * u, w / 12, 4 * u), pn);
+            c.drawRect(Rect.fromLTWH(x + q * w / 6, y + h, w / 12, 4 * u), pn);
+          }
+        }
+        final ctr = Offset(W / 2, H / 2);
+        final cw = W * 0.5;
+        c.drawRect(
+          Offset.zero & s,
+          Paint()..shader = _radial(ctr, cw, [_c(60, 120, 255, 0.45), _c(60, 120, 255, 0)], [0, 1]),
+        );
+        final chip = Rect.fromLTWH(ctr.dx - cw / 2, ctr.dy - cw / 2, cw, cw);
+        c.drawRect(chip, Paint()..color = const Color(0xFF2A2A46));
+        c.drawRect(
+            chip,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 4 * u
+              ..color = const Color(0xFF8AB4FF));
+        final pin = Paint()..color = _c(150, 210, 255, 0.8);
+        for (var q = 0; q < 28; q++) {
+          final t = (q + 0.5) * cw / 28;
+          c.drawRect(Rect.fromLTWH(chip.left + t, chip.top - 14 * u, 3 * u, 14 * u), pin);
+          c.drawRect(Rect.fromLTWH(chip.left + t, chip.bottom, 3 * u, 14 * u), pin);
+          c.drawRect(Rect.fromLTWH(chip.left - 14 * u, chip.top + t, 14 * u, 3 * u), pin);
+          c.drawRect(Rect.fromLTWH(chip.right, chip.top + t, 14 * u, 3 * u), pin);
+        }
+        c.drawCircle(
+            ctr,
+            cw * 0.25,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = W * 0.012
+              ..color = _c(20, 20, 30, 0.8));
+      });
+
+  /// Shattered glass with a see-through hole in the middle: a good "near" picture.
+  static Future<String> glass() => _png('art_glass', 1080, 2160, (c, s) {
+        final W = s.width, H = s.height;
+        final u = W / 540;
+        final rnd = math.Random(9);
+        double r() => rnd.nextDouble();
+        final cx = W / 2, cy = H * 0.5;
+        const n = 22;
+        final hole = Path();
+        for (var i = 0; i < n; i++) {
+          final a = i / n * math.pi * 2;
+          final k = (0.26 + r() * 0.12) * W;
+          final k2 = k * (1.05 + 0.25 * math.sin(a * 2));
+          final x = cx + math.cos(a) * k, y = cy + math.sin(a) * k2 * 1.25;
+          if (i == 0) {
+            hole.moveTo(x, y);
+          } else {
+            hole.lineTo(x, y);
+          }
+        }
+        hole.close();
+        c.save();
+        final clip = Path()
+          ..fillType = PathFillType.evenOdd
+          ..addRect(Offset.zero & s)
+          ..addPath(hole, Offset.zero);
+        c.clipPath(clip);
+        c.drawRect(
+          Offset.zero & s,
+          Paint()
+            ..shader = ui.Gradient.linear(Offset.zero, Offset(W, H),
+                [_c(40, 90, 255, 0.55), _c(90, 160, 255, 0.35), _c(30, 70, 230, 0.6)], [0, 0.5, 1]),
+        );
+        for (var i = 0; i < 36; i++) {
+          final a = r() * math.pi * 2, w = 0.1 + r() * 0.2;
+          final p = Path()
+            ..moveTo(cx, cy)
+            ..lineTo(cx + math.cos(a) * W * 1.5, cy + math.sin(a) * W * 1.8)
+            ..lineTo(cx + math.cos(a + w) * W * 1.5, cy + math.sin(a + w) * W * 1.8)
+            ..close();
+          c.drawPath(p, Paint()..color = r() < 0.5 ? _c(255, 255, 255, 0.06) : _c(0, 0, 40, 0.10));
+        }
+        for (var i = 0; i < 70; i++) {
+          final a = r() * math.pi * 2;
+          final rr = W * 0.2;
+          var x = cx + math.cos(a) * rr, y = cy + math.sin(a) * rr * 1.2;
+          final p = Path()..moveTo(x, y);
+          final len = W * (0.2 + r() * 0.7);
+          var aa = a;
+          for (var k = 0; k < 8; k++) {
+            aa += (r() - 0.5) * 0.35;
+            final st = len / 8;
+            x += math.cos(aa) * st;
+            y += math.sin(aa) * st * 1.2;
+            p.lineTo(x, y);
+          }
+          c.drawPath(
+              p,
+              Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeCap = StrokeCap.round
+                ..strokeWidth = (1 + r() * 2.5) * u
+                ..color = _c(190, 240, 255, 0.35 + r() * 0.5));
+        }
+        for (final m in [0.36, 0.5, 0.68, 0.9]) {
+          final p = Path();
+          const steps = 40;
+          for (var i = 0; i <= steps; i++) {
+            final a = i / steps * math.pi * 2;
+            final rr = W * m * (0.94 + r() * 0.12);
+            final x = cx + math.cos(a) * rr, y = cy + math.sin(a) * rr * 1.2;
+            if (i == 0) {
+              p.moveTo(x, y);
+            } else {
+              p.lineTo(x, y);
+            }
+          }
+          c.drawPath(
+              p,
+              Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 1.5 * u
+                ..color = _c(170, 230, 255, 0.4));
+        }
+        c.restore();
+        c.drawPath(
+            hole,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 14 * u
+              ..color = _c(79, 208, 255, 0.8)
+              ..maskFilter = MaskFilter.blur(BlurStyle.normal, 12 * u));
+        c.drawPath(
+            hole,
+            Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 6 * u
+              ..strokeJoin = StrokeJoin.round
+              ..color = _c(200, 245, 255, 0.95));
+      });
 }

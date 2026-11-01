@@ -91,6 +91,14 @@ class _StudioScreenState extends State<StudioScreen> {
                     ),
                     const SizedBox(height: 12),
                     _DepthCard(
+                      icon: Icons.layers_outlined,
+                      title: 'Two layers: back + front',
+                      text: 'Pick a back picture and a front picture (like broken glass). The front moves more when you tilt.',
+                      onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const DepthEditorScreen(startTwo: true))),
+                    ),
+                    const SizedBox(height: 12),
+                    _DepthCard(
                       icon: Icons.threed_rotation_rounded,
                       title: 'Scenes and layers',
                       text: 'Moon in a window, Earth in space, or stack your own pictures.',

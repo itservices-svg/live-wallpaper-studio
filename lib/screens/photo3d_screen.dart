@@ -39,7 +39,10 @@ class _MaskPainter extends CustomPainter {
 
 /// Pick a photo, mark what is in front (a tree, a person ...), and get depth layers from it.
 class Photo3dScreen extends StatefulWidget {
-  const Photo3dScreen({super.key});
+  const Photo3dScreen({super.key, this.holePath});
+
+  /// Set to make a see-through hole in this picture instead of cutting depth layers.
+  final String? holePath;
 
   @override
   State<Photo3dScreen> createState() => _Photo3dScreenState();
@@ -63,7 +66,14 @@ class _Photo3dScreenState extends State<Photo3dScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _pick());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final h = widget.holePath;
+      if (h != null) {
+        _load(h);
+      } else {
+        _pick();
+      }
+    });
   }
 
   @override
@@ -291,6 +301,17 @@ class _Photo3dScreenState extends State<Photo3dScreen> {
     if (_busy || _path == null) return;
     setState(() => _busy = true);
     try {
+      if (widget.holePath != null) {
+        final out = await Photo3d.cutHole(_path!, _cls, _mw, _mh);
+        if (!mounted) return;
+        if (out == null) {
+          _toast('First mark the part that should become see-through.');
+          setState(() => _busy = false);
+          return;
+        }
+        Navigator.of(context).pop<String>(out);
+        return;
+      }
       final layers = await Photo3d.build(_path!, _cls, _mw, _mh);
       if (!mounted) return;
       if (layers == null) {
@@ -322,9 +343,9 @@ class _Photo3dScreenState extends State<Photo3dScreen> {
         child: Column(
           children: [
             AppNav(
-              title: '3D from a photo',
+              title: widget.holePath != null ? 'Make a hole' : '3D from a photo',
               back: 'Back',
-              trailing: NavAction('Make 3D', filled: true, onTap: _make),
+              trailing: NavAction(widget.holePath != null ? 'Done' : 'Make 3D', filled: true, onTap: _make),
             ),
             Expanded(
               child: view == null
@@ -372,9 +393,12 @@ class _Photo3dScreenState extends State<Photo3dScreen> {
                               ),
                             ),
                             const SizedBox(height: 10),
-                            const Text(
-                              'Mark what should be in front (for example the tree): tap it, or paint over it. '
-                              'The rest stays far behind. Tilting the phone then moves the marked part more.',
+                            Text(
+                              widget.holePath != null
+                                  ? 'Mark the part that should become see-through (tap it, or paint over it). '
+                                      'The picture behind will show through there.'
+                                  : 'Mark what should be in front (for example the tree): tap it, or paint over it. '
+                                      'The rest stays far behind. Tilting the phone then moves the marked part more.',
                               style: AppText.small,
                             ),
                             const SizedBox(height: 10),
@@ -388,6 +412,7 @@ class _Photo3dScreenState extends State<Photo3dScreen> {
                               ],
                             ),
                             const SizedBox(height: 6),
+                            if (widget.holePath == null)
                             Wrap(
                               spacing: 8,
                               runSpacing: 4,
@@ -442,11 +467,12 @@ class _Photo3dScreenState extends State<Photo3dScreen> {
                                   label: const Text('Clear'),
                                 ),
                                 const SizedBox(width: 8),
-                                OutlinedButton.icon(
-                                  onPressed: _pick,
-                                  icon: const Icon(Icons.photo_outlined, size: 18),
-                                  label: const Text('Other photo'),
-                                ),
+                                if (widget.holePath == null)
+                                  OutlinedButton.icon(
+                                    onPressed: _pick,
+                                    icon: const Icon(Icons.photo_outlined, size: 18),
+                                    label: const Text('Other photo'),
+                                  ),
                               ],
                             ),
                           ],

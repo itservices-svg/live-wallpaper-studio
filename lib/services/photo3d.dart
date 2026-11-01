@@ -262,4 +262,38 @@ class Photo3d {
     }
     return out;
   }
+
+  /// Makes the marked area of [photoPath] see-through. Returns the new picture's path.
+  static Future<String?> cutHole(String photoPath, Uint8List cls, int mw, int mh) async {
+    if (!cls.any((c) => c > 0)) return null;
+    final codec = await ui.instantiateImageCodec(await File(photoPath).readAsBytes());
+    final photo = (await codec.getNextFrame()).image;
+    final pw = photo.width, ph = photo.height;
+    final sc = math.min(1.0, 1600 / math.max(pw, ph));
+    final ow = (pw * sc).round(), oh = (ph * sc).round();
+    final keep = Uint8List(cls.length);
+    for (var i = 0; i < cls.length; i++) {
+      keep[i] = cls[i] == 0 ? 255 : 0;
+    }
+    final alpha = await fromRgba(_alphaPixels(soft(morph(keep, mw, mh, 1, true), mw, mh)), mw, mh);
+    final dst = Rect.fromLTWH(0, 0, ow.toDouble(), oh.toDouble());
+    final img = await _render(ow, oh, (c) {
+      c.saveLayer(dst, Paint());
+      c.drawImageRect(photo, Rect.fromLTWH(0, 0, pw.toDouble(), ph.toDouble()), dst,
+          Paint()..filterQuality = FilterQuality.high);
+      c.drawImageRect(alpha, Rect.fromLTWH(0, 0, mw.toDouble(), mh.toDouble()), dst,
+          Paint()
+            ..filterQuality = FilterQuality.high
+            ..blendMode = BlendMode.dstIn);
+      c.restore();
+    });
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    img.dispose();
+    alpha.dispose();
+    photo.dispose();
+    final dir = await DepthService.dir();
+    final path = '${dir.path}/hole_${DateTime.now().millisecondsSinceEpoch}.png';
+    await File(path).writeAsBytes(data!.buffer.asUint8List(), flush: true);
+    return path;
+  }
 }
