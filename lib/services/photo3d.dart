@@ -296,4 +296,56 @@ class Photo3d {
     await File(path).writeAsBytes(data!.buffer.asUint8List(), flush: true);
     return path;
   }
+
+  /// Premultiplied RGBA that makes a black (or white) background see-through. The bright part
+  /// keeps its colour, so it blends like a real "screen" overlay.
+  static Uint8List keyPixels(Uint8List rgba, {required bool black, required double cut, required double gain}) {
+    final out = Uint8List(rgba.length);
+    final span = 255 - cut;
+    for (var i = 0; i < rgba.length; i += 4) {
+      final r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
+      if (black) {
+        final m = math.max(r, math.max(g, b));
+        if (m == 0) continue;
+        final a = (((m - cut) / span).clamp(0.0, 1.0) * gain).clamp(0.0, 1.0);
+        final k = a * 255 / m;
+        out[i] = math.min((a * 255).round(), (r * k).round());
+        out[i + 1] = math.min((a * 255).round(), (g * k).round());
+        out[i + 2] = math.min((a * 255).round(), (b * k).round());
+        out[i + 3] = (a * 255).round();
+      } else {
+        final mn = math.min(r, math.min(g, b));
+        if (mn == 255) continue;
+        final a = ((((255 - mn) - cut) / span).clamp(0.0, 1.0) * gain).clamp(0.0, 1.0);
+        final k = a * 255 / (255 - mn);
+        out[i] = math.min((a * 255).round(), ((r - mn) * k).round());
+        out[i + 1] = math.min((a * 255).round(), ((g - mn) * k).round());
+        out[i + 2] = math.min((a * 255).round(), ((b - mn) * k).round());
+        out[i + 3] = (a * 255).round();
+      }
+    }
+    return out;
+  }
+
+  /// Full-size version of [keyPixels]; saves a PNG and returns its path.
+  static Future<String> keyOut(String photoPath, {required bool black, required double cut, required double gain}) async {
+    final codec = await ui.instantiateImageCodec(await File(photoPath).readAsBytes());
+    final photo = (await codec.getNextFrame()).image;
+    final sc = math.min(1.0, 1600 / math.max(photo.width, photo.height));
+    final ow = (photo.width * sc).round(), oh = (photo.height * sc).round();
+    final scaled = await _render(ow, oh, (c) {
+      c.drawImageRect(photo, Rect.fromLTWH(0, 0, photo.width.toDouble(), photo.height.toDouble()),
+          Rect.fromLTWH(0, 0, ow.toDouble(), oh.toDouble()), Paint()..filterQuality = FilterQuality.high);
+    });
+    photo.dispose();
+    final px = (await scaled.toByteData(format: ui.ImageByteFormat.rawRgba))!.buffer.asUint8List();
+    scaled.dispose();
+    final img = await fromRgba(keyPixels(px, black: black, cut: cut, gain: gain), ow, oh);
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    img.dispose();
+    final dir = await DepthService.dir();
+    final path = '${dir.path}/key_${DateTime.now().millisecondsSinceEpoch}.png';
+    await File(path).writeAsBytes(data!.buffer.asUint8List(), flush: true);
+    return path;
+  }
 }

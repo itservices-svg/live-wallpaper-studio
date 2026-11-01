@@ -82,9 +82,13 @@ const _kinds = <_Kind>[
     ('Border', 'border frame'),
     ('Vintage', 'vintage frame'),
     ('Polaroid', 'polaroid frame'),
-    ('Broken glass', 'broken glass'),
     ('Window', 'window frame'),
-    ('Overlay', 'overlay'),
+    ('Glass crack*', 'cracked glass black background'),
+    ('Rain*', 'rain drops black background'),
+    ('Smoke*', 'smoke black background'),
+    ('Fire*', 'fire flames black background'),
+    ('Light leak*', 'light leak bokeh black background'),
+    ('Sparks*', 'sparks black background'),
   ]),
 ];
 

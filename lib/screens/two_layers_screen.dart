@@ -10,6 +10,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import 'art_library_screen.dart';
 import 'explore_screen.dart';
+import 'key_out_screen.dart';
 import 'photo3d_screen.dart';
 import 'pick_media_screen.dart';
 
@@ -108,6 +109,14 @@ class _TwoLayersScreenState extends State<TwoLayersScreen> {
     if (out != null && mounted) setState(() => _front = out);
   }
 
+  Future<void> _key() async {
+    final f = _front;
+    if (f == null) return;
+    final out = await Navigator.of(context)
+        .push<String>(MaterialPageRoute(builder: (_) => KeyOutScreen(path: f)));
+    if (out != null && mounted) setState(() => _front = out);
+  }
+
   void _next() {
     final b = _back, f = _front;
     if (b == null || f == null) {
@@ -121,7 +130,7 @@ class _TwoLayersScreenState extends State<TwoLayersScreen> {
     ]);
   }
 
-  Widget _slot(String title, String hint, String? path, VoidCallback onPick, {VoidCallback? onHole}) {
+  Widget _slot(String title, String hint, String? path, VoidCallback onPick, {VoidCallback? onHole, VoidCallback? onKey}) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -162,6 +171,8 @@ class _TwoLayersScreenState extends State<TwoLayersScreen> {
                     OutlinedButton(onPressed: onPick, child: Text(path == null ? 'Pick' : 'Change')),
                     if (onHole != null && path != null)
                       OutlinedButton(onPressed: onHole, child: const Text('Make a hole')),
+                    if (onKey != null && path != null)
+                      OutlinedButton(onPressed: onKey, child: const Text('Black/white → see-through')),
                   ],
                 ),
               ],
@@ -197,11 +208,13 @@ class _TwoLayersScreenState extends State<TwoLayersScreen> {
                   _slot(
                     'Front picture',
                     'The near layer (broken glass, a window, a frame ...). It moves more. '
-                        'It must have a see-through part so the back can show: use a PNG with transparency, '
-                        'or tap "Make a hole" and mark the part to cut out.',
+                        'It must have a see-through part so the back can show: use a PNG with transparency, or '
+                        'tap "Make a hole" and mark the part to cut out, or if the picture is on a black or white background '
+                        '(real photos of cracks, rain, smoke, fire, light) tap "Black/white → see-through".',
                     _front,
                     _setFront,
                     onHole: _hole,
+                    onKey: _key,
                   ),
                   const SizedBox(height: 14),
                   const Text(
