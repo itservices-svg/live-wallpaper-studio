@@ -8,6 +8,7 @@ import '../services/depth_service.dart';
 import '../state/studio_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'art_library_screen.dart';
 import 'explore_screen.dart';
 import 'photo3d_screen.dart';
 import 'pick_media_screen.dart';
@@ -32,7 +33,7 @@ class _TwoLayersScreenState extends State<TwoLayersScreen> {
       ..showSnackBar(SnackBar(content: Text(m), behavior: SnackBarBehavior.floating));
   }
 
-  Future<String?> _pickPicture(String title) async {
+  Future<String?> _pickPicture(String title, {required bool front}) async {
     final src = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: Colors.white,
@@ -58,20 +59,19 @@ class _TwoLayersScreenState extends State<TwoLayersScreen> {
                   onTap: () => Navigator.pop(c, 'explore')),
               ListTile(
                   leading: const Icon(Icons.auto_awesome),
-                  title: const Text('Built-in: circuit board (back)'),
-                  onTap: () => Navigator.pop(c, 'board')),
-              ListTile(
-                  leading: const Icon(Icons.broken_image_outlined),
-                  title: const Text('Built-in: broken glass (front)'),
-                  onTap: () => Navigator.pop(c, 'glass')),
+                  title: Text(front ? 'Built-in overlays (glass, vines, frost ...)' : 'Built-in back pictures'),
+                  onTap: () => Navigator.pop(c, 'library')),
             ],
           ),
         ),
       ),
     );
     if (src == null || !mounted) return null;
-    if (src == 'board') return DepthArt.board();
-    if (src == 'glass') return DepthArt.glass();
+    if (src == 'library') {
+      final res = await Navigator.of(context).push<(ArtDef, String)>(
+          MaterialPageRoute(builder: (_) => ArtLibraryScreen(only: front)));
+      return res?.$2;
+    }
     MediaItem? item;
     if (src == 'gallery') {
       studio.openPicker(video: false);
@@ -91,12 +91,12 @@ class _TwoLayersScreenState extends State<TwoLayersScreen> {
   }
 
   Future<void> _setBack() async {
-    final p = await _pickPicture('Back picture (far)');
+    final p = await _pickPicture('Back picture (far)', front: false);
     if (p != null && mounted) setState(() => _back = p);
   }
 
   Future<void> _setFront() async {
-    final p = await _pickPicture('Front picture (near)');
+    final p = await _pickPicture('Front picture (near)', front: true);
     if (p != null && mounted) setState(() => _front = p);
   }
 

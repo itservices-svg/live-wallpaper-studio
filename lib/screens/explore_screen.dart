@@ -153,7 +153,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _token++;
     _items.clear();
     // Start from a random page so the same pictures do not show every time.
-    _startPage = 1 + _rand.nextInt(_video ? 4 : 6);
+    // (A typed search always starts at the top, where the best matches are.)
+    _startPage = _cat == -1 ? 1 : 1 + _rand.nextInt(_video ? 4 : 6);
     _page = _startPage;
     _done = false;
     _error = null;
@@ -178,6 +179,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
           videoType: _kind.videoType,
           page: _page);
       if (!mounted || token != _token) return;
+      if (r.items.isEmpty && _items.isEmpty && _cat == -1 && _filters.orientation != 'all' && !_video) {
+        // Nothing in portrait for this search: look in every shape.
+        _filters = _filters.copyWith(orientation: 'all');
+        _loading = false;
+        _toast('No portrait matches, showing all shapes.');
+        _load();
+        return;
+      }
       if (r.items.isEmpty && _items.isEmpty && _page > 1) {
         // Random page was past the end of a small result set: start from the top.
         _page = 1;
@@ -185,7 +194,24 @@ class _ExploreScreenState extends State<ExploreScreen> {
         _load();
         return;
       }
-      final fresh = r.items.toList()..shuffle(_rand);
+      var fresh = r.items.toList();
+      if (_cat == -1) {
+        // Typed search: keep Pixabay's order, but put pictures whose keywords hold every
+        // word first, then the ones that hold some.
+        final words = _query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 1).toList();
+        int score(PixabayItem it) => words.where((w) => it.tags.contains(w)).length;
+        final order = <PixabayItem, int>{for (var i = 0; i < fresh.length; i++) fresh[i]: i};
+        fresh.sort((a, b) {
+          final d = score(b).compareTo(score(a));
+          return d != 0 ? d : order[a]!.compareTo(order[b]!);
+        });
+        if (words.isNotEmpty) {
+          final hit = fresh.where((it) => score(it) > 0).toList();
+          if (hit.isNotEmpty) fresh = hit;
+        }
+      } else {
+        fresh.shuffle(_rand);
+      }
       setState(() {
         _items.addAll(fresh);
         _page = r.nextPage;

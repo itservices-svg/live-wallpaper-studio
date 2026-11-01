@@ -535,4 +535,420 @@ class DepthArt {
               ..strokeJoin = StrokeJoin.round
               ..color = _c(200, 245, 255, 0.95));
       });
+
+  // ---- overlay library: full-screen pictures drawn in code (designed on a 540 x 1080 canvas)
+
+  static Future<String> _ov(String id, void Function(Canvas) fn) =>
+      _png('ov_$id', 1080, 2160, (c, s) {
+        c.scale(s.width / 540);
+        fn(c);
+      });
+
+  static const double _w = 540, _h = 1080;
+
+  static Paint _stroke(Color col, double w, {double blur = 0, StrokeCap cap = StrokeCap.round}) {
+    final p = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w
+      ..strokeCap = cap
+      ..strokeJoin = StrokeJoin.round
+      ..color = col;
+    if (blur > 0) p.maskFilter = MaskFilter.blur(BlurStyle.normal, blur);
+    return p;
+  }
+
+  /// A glass screen cracked from one corner.
+  static Future<String> crackedScreen() => _ov('crack', (c) {
+        final rnd = math.Random(21);
+        double r() => rnd.nextDouble();
+        final cx = _w * 0.78, cy = _h * 0.22;
+        final rays = List<double>.generate(26, (_) => r() * math.pi * 2)..sort();
+        for (final a in rays) {
+          var x = cx, y = cy, aa = a;
+          final len = _w * (0.5 + r() * 1.6);
+          final p = Path()..moveTo(x, y);
+          for (var k = 0; k < 14; k++) {
+            aa += (r() - 0.5) * 0.12;
+            x += math.cos(aa) * len / 14;
+            y += math.sin(aa) * len / 14;
+            p.lineTo(x, y);
+          }
+          final w = 1.3 + r() * 1.2;
+          c.drawPath(p, _stroke(_c(150, 220, 255, 0.9), w + 2, blur: 3));
+          c.drawPath(p, _stroke(_c(255, 255, 255, 0.75), w));
+          c.save();
+          c.translate(1, 1);
+          c.drawPath(p, _stroke(_c(0, 0, 0, 0.25), 0.6));
+          c.restore();
+        }
+        for (var ring = 1; ring <= 7; ring++) {
+          final rad = ring * ring * 9 + 22.0;
+          final p = Path();
+          for (var i = 0; i < rays.length; i++) {
+            final a = rays[i] + (r() - 0.5) * 0.03;
+            final rr = rad * (0.85 + r() * 0.3);
+            final x = cx + math.cos(a) * rr, y = cy + math.sin(a) * rr;
+            if (i == 0) {
+              p.moveTo(x, y);
+            } else {
+              p.lineTo(x, y);
+            }
+          }
+          p.close();
+          c.drawPath(p, _stroke(_c(255, 255, 255, 0.55 - ring * 0.05), 1.1));
+        }
+        c.drawCircle(Offset(cx, cy), 40,
+            Paint()..shader = _radial(Offset(cx, cy), 40, [_c(255, 255, 255, 0.9), _c(255, 255, 255, 0)], [0, 1]));
+        for (var i = 0; i < rays.length - 1; i++) {
+          final a = rays[i], b = rays[i + 1];
+          final p = Path()
+            ..moveTo(cx, cy)
+            ..lineTo(cx + math.cos(a) * _w * 2, cy + math.sin(a) * _w * 2)
+            ..lineTo(cx + math.cos(b) * _w * 2, cy + math.sin(b) * _w * 2)
+            ..close();
+          c.drawPath(p, Paint()..color = r() < 0.5 ? _c(255, 255, 255, 0.05) : _c(120, 180, 255, 0.05));
+        }
+      });
+
+  /// A metal ship window (porthole) with rivets.
+  static Future<String> porthole() => _ov('porthole', (c) {
+        const cx = _w / 2, cy = _h / 2;
+        const r = _w * 0.36;
+        c.save();
+        c.clipPath(Path()
+          ..fillType = PathFillType.evenOdd
+          ..addRect(const Rect.fromLTWH(0, 0, _w, _h))
+          ..addOval(Rect.fromCircle(center: const Offset(cx, cy), radius: r)));
+        c.drawRect(
+          const Rect.fromLTWH(0, 0, _w, _h),
+          Paint()
+            ..shader = ui.Gradient.linear(Offset.zero, const Offset(_w, _h),
+                [const Color(0xFF59606B), const Color(0xFF2E333B), const Color(0xFF4A515C)], [0, 0.5, 1]),
+        );
+        final rnd = math.Random(4);
+        for (var i = 0; i < 900; i++) {
+          c.drawRect(Rect.fromLTWH(rnd.nextDouble() * _w, rnd.nextDouble() * _h, 1 + rnd.nextDouble() * 2, 1),
+              Paint()..color = _c(255, 255, 255, rnd.nextDouble() * 0.05));
+        }
+        c.restore();
+        for (final (rad, w, col) in [
+          (r + 6, 12.0, const Color(0xFF1D2026)),
+          (r + 22, 8.0, const Color(0xFF8A919D)),
+          (r + 40, 10.0, const Color(0xFF3A3F48)),
+        ]) {
+          c.drawCircle(const Offset(cx, cy), rad, _stroke(col, w));
+        }
+        c.drawCircle(
+          const Offset(cx, cy),
+          r + 2,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 6
+            ..shader = ui.Gradient.linear(const Offset(cx - r, cy - r), const Offset(cx + r, cy + r),
+                [_c(255, 255, 255, 0.65), _c(255, 255, 255, 0), _c(0, 0, 0, 0.6)], [0, 0.5, 1]),
+        );
+        for (var i = 0; i < 16; i++) {
+          final a = i / 16 * math.pi * 2;
+          final p = Offset(cx + math.cos(a) * (r + 80), cy + math.sin(a) * (r + 80));
+          c.drawCircle(
+            p,
+            9,
+            Paint()
+              ..shader = _radial(p, 9, [const Color(0xFFD9DDE4), const Color(0xFF444A54)], [0, 1],
+                  focal: Offset(p.dx - 2, p.dy - 2), fr: 1),
+          );
+          c.drawCircle(p, 9, _stroke(_c(0, 0, 0, 0.5), 1));
+        }
+      });
+
+  static void _leaf(Canvas c, double x, double y, double a, double sc, List<Color> col) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(a);
+    c.scale(sc);
+    final p = Path()
+      ..moveTo(0, 0)
+      ..cubicTo(14, -14, 40, -12, 60, 0)
+      ..cubicTo(40, 12, 14, 14, 0, 0);
+    c.drawPath(p, Paint()..shader = ui.Gradient.linear(const Offset(0, -14), const Offset(0, 14), col));
+    c.drawPath(p, _stroke(_c(10, 50, 10, 0.55), 1));
+    c.drawLine(const Offset(2, 0), const Offset(56, 0), _stroke(_c(200, 255, 180, 0.55), 1));
+    final veins = Path();
+    for (var i = 1; i < 5; i++) {
+      veins
+        ..moveTo(i * 11.0, 0)
+        ..lineTo(i * 11.0 + 10, -8)
+        ..moveTo(i * 11.0, 0)
+        ..lineTo(i * 11.0 + 10, 8);
+    }
+    c.drawPath(veins, _stroke(_c(200, 255, 180, 0.3), 1));
+    c.restore();
+  }
+
+  /// Leafy vines growing in from the edges, with a few small flowers.
+  static Future<String> vines() => _ov('vines', (c) {
+        final rnd = math.Random(8);
+        double r() => rnd.nextDouble();
+        const cols = [
+          [Color(0xFF3F9B3A), Color(0xFF1D6A2A)],
+          [Color(0xFF58B848), Color(0xFF2A7A30)],
+          [Color(0xFF2F8A45), Color(0xFF14502A)],
+        ];
+        List<List<double>> vine(double x, double y, double a0, double len, int depth) {
+          var px = x, py = y, a = a0;
+          final path = Path()..moveTo(x, y);
+          final pts = <List<double>>[];
+          for (var i = 0; i < 30; i++) {
+            a += (r() - 0.5) * 0.35;
+            px += math.cos(a) * len / 30;
+            py += math.sin(a) * len / 30;
+            path.lineTo(px, py);
+            pts.add([px, py, a]);
+          }
+          c.drawPath(path, _stroke(const Color(0xFF2C5A26), 5.0 - depth));
+          for (var i = 0; i < pts.length; i += 2) {
+            final side = i % 4 == 0 ? 1 : -1;
+            _leaf(c, pts[i][0], pts[i][1], pts[i][2] + side * (0.7 + r() * 0.5),
+                (0.55 + r() * 0.5) * (1 - depth * 0.1), cols[(r() * 3).floor()]);
+          }
+          return pts;
+        }
+
+        final starts = <List<double>>[
+          [0, _h * 0.1, 0.5],
+          [0, _h * 0.45, 0.3],
+          [0, _h * 0.8, -0.3],
+          [_w, _h * 0.2, math.pi - 0.5],
+          [_w, _h * 0.62, math.pi + 0.3],
+          [_w * 0.3, 0, 1.4],
+          [_w * 0.8, 0, 1.7],
+          [_w * 0.2, _h, -1.4],
+          [_w * 0.7, _h, -1.7],
+        ];
+        for (final s in starts) {
+          final pts = vine(s[0], s[1], s[2], _w * (0.7 + r() * 0.5), 0);
+          if (r() < 0.7) vine(pts[12][0], pts[12][1], pts[12][2] + 0.9, _w * 0.35, 2);
+        }
+        for (var i = 0; i < 9; i++) {
+          final x = r() < 0.5 ? r() * _w * 0.25 : _w - r() * _w * 0.25;
+          final y = r() * _h;
+          if (r() < 0.4) continue;
+          for (var k = 0; k < 6; k++) {
+            c.save();
+            c.translate(x, y);
+            c.rotate(k / 6 * 6.28);
+            final pet = Rect.fromCenter(center: const Offset(9, 0), width: 18, height: 10);
+            c.drawOval(pet, Paint()..color = const Color(0xFFFFD7E6));
+            c.drawOval(pet, _stroke(const Color(0xFFE58AA8), 0.8));
+            c.restore();
+          }
+          c.drawCircle(Offset(x, y), 4, Paint()..color = const Color(0xFFF4C542));
+        }
+      });
+
+  /// Paper with a torn hole.
+  static Future<String> tornPaper() => _ov('torn', (c) {
+        final rnd = math.Random(31);
+        double r() => rnd.nextDouble();
+        const cx = _w / 2, cy = _h * 0.5;
+        final hole = Path();
+        const n = 90;
+        for (var i = 0; i < n; i++) {
+          final a = i / n * 6.283;
+          final rad = _w *
+              (0.3 + 0.05 * math.sin(a * 3) + 0.04 * math.sin(a * 7 + 1)) *
+              (1 + (r() - 0.5) * 0.14);
+          final x = cx + math.cos(a) * rad, y = cy + math.sin(a) * rad * 1.35;
+          if (i == 0) {
+            hole.moveTo(x, y);
+          } else {
+            hole.lineTo(x, y);
+          }
+        }
+        hole.close();
+        final outside = Path()
+          ..fillType = PathFillType.evenOdd
+          ..addRect(const Rect.fromLTWH(0, 0, _w, _h))
+          ..addPath(hole, Offset.zero);
+        c.save();
+        c.clipPath(outside);
+        c.drawRect(
+          const Rect.fromLTWH(0, 0, _w, _h),
+          Paint()
+            ..shader = ui.Gradient.linear(
+                Offset.zero, const Offset(_w, _h), [const Color(0xFFEFE3C8), const Color(0xFFD8C7A2)]),
+        );
+        for (var i = 0; i < 5000; i++) {
+          final dark = r() < 0.5;
+          c.drawRect(Rect.fromLTWH(r() * _w, r() * _h, 1 + r() * 3, 1 + r() * 3),
+              Paint()..color = dark ? _c(120, 90, 50, r() * 0.07) : _c(255, 255, 255, r() * 0.07));
+        }
+        c.drawPath(hole, _stroke(_c(0, 0, 0, 0.6), 14, blur: 10));
+        c.restore();
+        c.drawPath(hole, _stroke(_c(255, 250, 235, 0.95), 7));
+      });
+
+  /// Frost and ice crystals creeping in from the edges.
+  static Future<String> frost() => _ov('frost', (c) {
+        final rnd = math.Random(51);
+        double r() => rnd.nextDouble();
+        const m = _w * 0.22;
+        final white = _c(235, 248, 255, 0.88);
+        final none = _c(235, 248, 255, 0);
+        void band(Offset a, Offset b, Rect rc) {
+          c.drawRect(rc, Paint()..shader = ui.Gradient.linear(a, b, [white, none]));
+        }
+
+        band(Offset.zero, const Offset(m, 0), const Rect.fromLTWH(0, 0, m, _h));
+        band(const Offset(_w, 0), const Offset(_w - m, 0), const Rect.fromLTWH(_w - m, 0, m, _h));
+        band(Offset.zero, const Offset(0, m), const Rect.fromLTWH(0, 0, _w, m));
+        band(const Offset(0, _h), const Offset(0, _h - m), const Rect.fromLTWH(0, _h - m, _w, m));
+        void crystal(double x, double y, double a, double len, int d) {
+          if (d > 3 || len < 5) return;
+          final x2 = x + math.cos(a) * len, y2 = y + math.sin(a) * len;
+          c.drawLine(Offset(x, y), Offset(x2, y2),
+              _stroke(_c(255, 255, 255, 0.85 - d * 0.15), math.max(0.6, 2.2 - d * 0.6)));
+          for (final sd in [-1, 1]) {
+            crystal(x + (x2 - x) * 0.45, y + (y2 - y) * 0.45, a + sd * 1.05, len * 0.5, d + 1);
+            crystal(x + (x2 - x) * 0.8, y + (y2 - y) * 0.8, a + sd * 0.9, len * 0.38, d + 1);
+          }
+          crystal(x2, y2, a + (r() - 0.5) * 0.3, len * 0.4, d + 1);
+        }
+
+        for (var i = 0; i < 46; i++) {
+          final side = (r() * 4).floor();
+          double x, y, a;
+          if (side == 0) {
+            x = 0;
+            y = r() * _h;
+            a = (r() - 0.5) * 1.2;
+          } else if (side == 1) {
+            x = _w;
+            y = r() * _h;
+            a = math.pi + (r() - 0.5) * 1.2;
+          } else if (side == 2) {
+            x = r() * _w;
+            y = 0;
+            a = math.pi / 2 + (r() - 0.5) * 1.2;
+          } else {
+            x = r() * _w;
+            y = _h;
+            a = -math.pi / 2 + (r() - 0.5) * 1.2;
+          }
+          crystal(x, y, a, _w * (0.1 + r() * 0.14), 0);
+        }
+        for (var i = 0; i < 500; i++) {
+          final x = r() * _w, y = r() * _h;
+          final dEdge = [x, _w - x, y * 0.5, (_h - y) * 0.5].reduce(math.min);
+          if (r() * m * 1.4 < dEdge) continue;
+          c.drawCircle(Offset(x, y), 0.6 + r() * 1.8, Paint()..color = _c(255, 255, 255, 0.3 + r() * 0.5));
+        }
+      });
+
+  /// Soft beams of light from the top-left corner.
+  static Future<String> lightRays() => _ov('rays', (c) {
+        final rnd = math.Random(61);
+        double r() => rnd.nextDouble();
+        const ox = _w * 0.15, oy = -_h * 0.05;
+        for (var i = 0; i < 14; i++) {
+          final a = 0.55 + r() * 0.9, w = 0.015 + r() * 0.05;
+          final p = Path()
+            ..moveTo(ox, oy)
+            ..lineTo(ox + math.cos(a - w) * _h * 1.6, oy + math.sin(a - w) * _h * 1.6)
+            ..lineTo(ox + math.cos(a + w) * _h * 1.6, oy + math.sin(a + w) * _h * 1.6)
+            ..close();
+          c.drawPath(
+            p,
+            Paint()
+              ..blendMode = BlendMode.plus
+              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3)
+              ..shader = ui.Gradient.linear(const Offset(ox, oy),
+                  Offset(ox + math.cos(a) * _h, oy + math.sin(a) * _h),
+                  [_c(255, 240, 200, 0.28 + r() * 0.2), _c(255, 240, 200, 0)]),
+          );
+        }
+        c.drawRect(
+          const Rect.fromLTWH(0, 0, _w, _h),
+          Paint()
+            ..blendMode = BlendMode.plus
+            ..shader = _radial(const Offset(ox, oy), _w * 0.6, [_c(255, 245, 215, 0.8), _c(255, 245, 215, 0)], [0, 1]),
+        );
+        for (var i = 0; i < 60; i++) {
+          c.drawCircle(Offset(r() * _w, r() * _h * 0.8), 0.8 + r() * 2,
+              Paint()..color = _c(255, 250, 230, r() * 0.6));
+        }
+      });
+
+  /// Drifting fog along the bottom and the sides.
+  static Future<String> smoke() => _ov('smoke', (c) {
+        final rnd = math.Random(71);
+        double r() => rnd.nextDouble();
+        void puff(double x, double y, double rad, double a) {
+          c.drawCircle(Offset(x, y), rad,
+              Paint()..shader = _radial(Offset(x, y), rad, [_c(235, 238, 245, a), _c(235, 238, 245, 0)], [0, 1]));
+        }
+
+        for (var i = 0; i < 46; i++) {
+          puff(r() * _w, _h * (0.55 + r() * 0.5), _w * (0.12 + r() * 0.22) * 1.6, 0.22 + r() * 0.2);
+        }
+        for (var i = 0; i < 20; i++) {
+          puff(r() < 0.5 ? -_w * 0.05 : _w * 1.05, r() * _h, _w * (0.2 + r() * 0.2) * 1.5, 0.25);
+        }
+      });
+
+  /// Soap bubbles with shiny highlights.
+  static Future<String> bubbles() => _ov('bubbles', (c) {
+        final rnd = math.Random(81);
+        double r() => rnd.nextDouble();
+        for (var i = 0; i < 46; i++) {
+          final rad = 6 + r() * r() * 60;
+          final p = Offset(r() * _w, r() * _h);
+          c.drawCircle(
+            p,
+            rad,
+            Paint()
+              ..shader = _radial(p, rad, [_c(180, 230, 255, 0.02), _c(150, 215, 255, 0.16), _c(220, 245, 255, 0.65)],
+                  [0.55, 0.85, 1]),
+          );
+          c.drawCircle(p, rad, _stroke(_c(255, 255, 255, 0.55), 1));
+          final hp = Offset(p.dx - rad * 0.4, p.dy - rad * 0.45);
+          c.save();
+          c.translate(hp.dx, hp.dy);
+          c.rotate(-0.6);
+          c.drawOval(
+            Rect.fromCenter(center: Offset.zero, width: rad * 0.6, height: rad * 0.36),
+            Paint()..color = _c(255, 255, 255, 0.9),
+          );
+          c.restore();
+          final lp = Offset(p.dx + rad * 0.4, p.dy + rad * 0.5);
+          c.drawCircle(lp, rad * 0.3,
+              Paint()..shader = _radial(lp, rad * 0.3, [_c(255, 200, 240, 0.35), _c(255, 200, 240, 0)], [0, 1]));
+        }
+      });
+
+  /// Every full-screen picture of the library: back pictures first, then front overlays.
+  static final List<ArtDef> catalog = [
+    ArtDef('stars', 'Stars', false, stars),
+    ArtDef('board', 'Circuit board', false, board),
+    ArtDef('glass', 'Broken glass', true, glass),
+    ArtDef('crack', 'Cracked screen', true, crackedScreen),
+    ArtDef('window', 'Window', true, window),
+    ArtDef('porthole', 'Porthole', true, porthole),
+    ArtDef('vines', 'Vines', true, vines),
+    ArtDef('torn', 'Torn paper', true, tornPaper),
+    ArtDef('frost', 'Frost', true, frost),
+    ArtDef('rays', 'Light rays', true, lightRays),
+    ArtDef('smoke', 'Fog', true, smoke),
+    ArtDef('bubbles', 'Bubbles', true, bubbles),
+  ];
+}
+
+/// One picture of the built-in library. [front] = an overlay with see-through parts.
+class ArtDef {
+  const ArtDef(this.id, this.name, this.front, this.build);
+
+  final String id;
+  final String name;
+  final bool front;
+  final Future<String> Function() build;
 }

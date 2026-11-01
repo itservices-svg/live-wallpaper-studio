@@ -16,6 +16,7 @@ class PixabayItem {
     required this.height,
     required this.user,
     this.seconds = 0,
+    this.tags = '',
   });
 
   final int id;
@@ -26,6 +27,7 @@ class PixabayItem {
   final int height;
   final String user;
   final double seconds;
+  final String tags; // Pixabay's own keywords for the picture
 }
 
 class PixabayException implements Exception {
@@ -154,6 +156,7 @@ class Pixabay {
             width: (m['imageWidth'] as num?)?.toInt() ?? 0,
             height: (m['imageHeight'] as num?)?.toInt() ?? 0,
             user: (m['user'] as String?) ?? '',
+            tags: ((m['tags'] as String?) ?? '').toLowerCase(),
           ));
         }
       }

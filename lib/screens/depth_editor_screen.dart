@@ -13,6 +13,7 @@ import '../state/studio_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'explore_screen.dart';
+import 'art_library_screen.dart';
 import 'photo3d_screen.dart';
 import 'two_layers_screen.dart';
 import 'pick_media_screen.dart';
@@ -297,6 +298,10 @@ class _DepthEditorScreenState extends State<DepthEditorScreen> with SingleTicker
                     title: const Text('From Explore (photos, vectors, frames)'),
                     onTap: () => Navigator.pop(c, 'explore')),
                 ListTile(
+                    leading: const Icon(Icons.collections_outlined),
+                    title: const Text('Built-in library (glass, vines, frost ...)'),
+                    onTap: () => Navigator.pop(c, 'library')),
+                ListTile(
                     leading: const Icon(Icons.filter_hdr_outlined),
                     title: const Text('3D from one photo (replaces layers)'),
                     onTap: () => Navigator.pop(c, 'photo3d')),
@@ -324,6 +329,14 @@ class _DepthEditorScreenState extends State<DepthEditorScreen> with SingleTicker
       ),
     );
     if (src == null || !mounted) return;
+    if (src == 'library') {
+      final res = await Navigator.of(context)
+          .push<(ArtDef, String)>(MaterialPageRoute(builder: (_) => const ArtLibraryScreen()));
+      if (res != null) {
+        await _addLayer(DepthLayer(path: res.$2, name: res.$1.name, d: res.$1.front ? 0.8 : 0.1));
+      }
+      return;
+    }
     if (src == 'photo3d') {
       await _photo3d();
       return;
