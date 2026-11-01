@@ -80,10 +80,25 @@ class _StudioScreenState extends State<StudioScreen> {
               ),
               const SizedBox(height: 18),
               if (depthMode)
-                _DepthCard(onTap: () {
-                  Navigator.of(context)
-                      .push(MaterialPageRoute(builder: (_) => const DepthEditorScreen()));
-                })
+                Column(
+                  children: [
+                    _DepthCard(
+                      icon: Icons.filter_hdr_outlined,
+                      title: '3D from one photo',
+                      text: 'Pick a photo (a tree in front, view behind), mark the tree, and it moves ahead when you tilt the phone.',
+                      onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const DepthEditorScreen(startPhoto: true))),
+                    ),
+                    const SizedBox(height: 12),
+                    _DepthCard(
+                      icon: Icons.threed_rotation_rounded,
+                      title: 'Scenes and layers',
+                      text: 'Moon in a window, Earth in space, or stack your own pictures.',
+                      onTap: () => Navigator.of(context)
+                          .push(MaterialPageRoute(builder: (_) => const DepthEditorScreen())),
+                    ),
+                  ],
+                )
               else if (gifMode)
                 _GifCard(onTap: () {
                   Navigator.of(context)
@@ -430,8 +445,11 @@ class _DebugPlatform extends StatelessWidget {
 
 
 class _DepthCard extends StatelessWidget {
-  const _DepthCard({required this.onTap});
+  const _DepthCard({required this.icon, required this.title, required this.text, required this.onTap});
 
+  final IconData icon;
+  final String title;
+  final String text;
   final VoidCallback onTap;
 
   @override
@@ -445,24 +463,21 @@ class _DepthCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.line),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.threed_rotation_rounded, size: 34, color: AppColors.pri),
-            SizedBox(width: 14),
+            Icon(icon, size: 34, color: AppColors.pri),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Depth wallpaper', style: AppText.h2),
-                  SizedBox(height: 4),
-                  Text(
-                    'Layers that move when you tilt the phone: Moon in a window, Earth in space, or your own photos.',
-                    style: AppText.small,
-                  ),
+                  Text(title, style: AppText.h2),
+                  const SizedBox(height: 4),
+                  Text(text, style: AppText.small),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right_rounded, color: AppColors.sub),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.sub),
           ],
         ),
       ),

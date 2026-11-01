@@ -13,6 +13,7 @@ import '../state/studio_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'explore_screen.dart';
+import 'photo3d_screen.dart';
 import 'pick_media_screen.dart';
 
 /// Tilt state shared by the preview painter (same maths as the native wallpaper service).
@@ -41,7 +42,7 @@ class _DepthPainter extends CustomPainter {
       final dy = rig.ty * l.d * 0.06 * h + math.cos(rig.t * 0.45 + i * 1.7) * l.f * w;
       double s, cx, cy;
       if (l.cover) {
-        s = math.max(w / bw, h / bh) * (1 + 0.2 * l.d + 4 * l.f);
+        s = math.max(w / bw, h / bh) * (l.k > 0 ? l.k : 1 + 0.2 * l.d + 4 * l.f);
         cx = w / 2 + dx;
         cy = h / 2 + dy;
       } else {
@@ -63,7 +64,10 @@ class _DepthPainter extends CustomPainter {
 
 /// Build a wallpaper from picture layers that move when the phone is tilted.
 class DepthEditorScreen extends StatefulWidget {
-  const DepthEditorScreen({super.key});
+  const DepthEditorScreen({super.key, this.startPhoto = false});
+
+  /// Open the "3D from a photo" step straight away.
+  final bool startPhoto;
 
   @override
   State<DepthEditorScreen> createState() => _DepthEditorScreenState();
@@ -111,12 +115,13 @@ class _DepthEditorScreenState extends State<DepthEditorScreen> with SingleTicker
 
   Future<void> _init() async {
     _p = await DepthService.load();
-    if (_p.layers.isEmpty) {
+    if (_p.layers.isEmpty && !widget.startPhoto) {
       await _preset('moon');
     } else {
       await _reloadImages();
     }
     if (mounted) setState(() => _loaded = true);
+    if (widget.startPhoto && mounted) await _photo3d();
   }
 
   @override
@@ -166,6 +171,27 @@ class _DepthEditorScreenState extends State<DepthEditorScreen> with SingleTicker
   Future<void> _persist() => DepthService.save(_p);
 
   // ---- presets and adding layers
+
+  Future<void> _photo3d() async {
+    final layers = await Navigator.of(context)
+        .push<List<DepthLayer>>(MaterialPageRoute(builder: (_) => const Photo3dScreen()));
+    if (layers == null || !mounted) return;
+    _p.layers
+      ..clear()
+      ..addAll(layers);
+    await _reloadImages();
+    await _persist();
+  }
+
+  /// Photo layers share one zoom so they stay lined up; recompute it when a depth changes.
+  void _syncK() {
+    final fixed = _p.layers.where((l) => l.k > 0).toList();
+    if (fixed.isEmpty) return;
+    final k = 1 + 0.2 * fixed.map((l) => l.d).reduce(math.max);
+    for (final l in fixed) {
+      l.k = k;
+    }
+  }
 
   Future<void> _preset(String kind) async {
     setState(() => _busy = true);
@@ -249,6 +275,10 @@ class _DepthEditorScreenState extends State<DepthEditorScreen> with SingleTicker
                     leading: const Icon(Icons.explore_outlined),
                     title: const Text('From Explore (photos, vectors, frames)'),
                     onTap: () => Navigator.pop(c, 'explore')),
+                ListTile(
+                    leading: const Icon(Icons.filter_hdr_outlined),
+                    title: const Text('3D from one photo (replaces layers)'),
+                    onTap: () => Navigator.pop(c, 'photo3d')),
                 const Divider(height: 8),
                 ListTile(
                     leading: const Icon(Icons.auto_awesome),
@@ -273,6 +303,10 @@ class _DepthEditorScreenState extends State<DepthEditorScreen> with SingleTicker
       ),
     );
     if (src == null || !mounted) return;
+    if (src == 'photo3d') {
+      await _photo3d();
+      return;
+    }
     if (src.startsWith('b:')) {
       await _addBuiltIn(src.substring(2));
       return;
@@ -443,7 +477,10 @@ class _DepthEditorScreenState extends State<DepthEditorScreen> with SingleTicker
                   icon: const Icon(Icons.delete_outline_rounded, size: 18)),
             ],
           ),
-          _slider('Depth', l.d, 0, 1, (v) => setState(() => l.d = v), left: 'far', right: 'near'),
+          _slider('Depth', l.d, 0, 1, (v) => setState(() {
+            l.d = v;
+            _syncK();
+          }), left: 'far', right: 'near'),
           if (!l.cover) ...[
             _slider('Size', l.w, 0.3, 2.2, (v) => setState(() => l.w = v)),
             _slider('Up/down', l.y, 0, 1, (v) => setState(() => l.y = v)),
@@ -501,6 +538,7 @@ class _DepthEditorScreenState extends State<DepthEditorScreen> with SingleTicker
                             _chip('Moon in window', Icons.nightlight_round, () => _preset('moon')),
                             _chip('Earth in galaxy', Icons.public, () => _preset('earth')),
                             _chip('Stars only', Icons.auto_awesome, () => _preset('stars')),
+                            _chip('3D from a photo', Icons.filter_hdr_outlined, _photo3d),
                           ],
                         ),
                         const SizedBox(height: 14),

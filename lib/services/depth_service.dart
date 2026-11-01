@@ -21,6 +21,7 @@ class DepthLayer {
     this.x = 0.5,
     this.y = 0.5,
     this.f = 0.0,
+    this.k = 0.0,
   });
 
   String path;
@@ -31,8 +32,10 @@ class DepthLayer {
   double x;
   double y;
   double f;
+  double k; // >0: fixed zoom for a full-screen layer (photo layers share it so they stay aligned)
 
-  Map<String, dynamic> toJson() => {'p': path, 'n': name, 'd': d, 'c': cover, 'w': w, 'x': x, 'y': y, 'f': f};
+  Map<String, dynamic> toJson() =>
+      {'p': path, 'n': name, 'd': d, 'c': cover, 'w': w, 'x': x, 'y': y, 'f': f, 'k': k};
 
   static DepthLayer fromJson(Map<String, dynamic> j) => DepthLayer(
         path: j['p'] as String,
@@ -43,6 +46,7 @@ class DepthLayer {
         x: (j['x'] as num?)?.toDouble() ?? 0.5,
         y: (j['y'] as num?)?.toDouble() ?? 0.5,
         f: (j['f'] as num?)?.toDouble() ?? 0.0,
+        k: (j['k'] as num?)?.toDouble() ?? 0.0,
       );
 }
 

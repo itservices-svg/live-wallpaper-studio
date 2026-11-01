@@ -28,7 +28,7 @@ class DepthWallpaperService : WallpaperService() {
 
     private class Layer(
         val bmp: Bitmap, val d: Float, val cover: Boolean,
-        val w: Float, val x: Float, val y: Float, val f: Float,
+        val w: Float, val x: Float, val y: Float, val f: Float, val k: Float,
     )
 
     private inner class DepthEngine : Engine(), SensorEventListener {
@@ -125,6 +125,7 @@ class DepthWallpaperService : WallpaperService() {
                             o.optDouble("x", 0.5).toFloat(),
                             o.optDouble("y", 0.5).toFloat(),
                             o.optDouble("f", 0.0).toFloat(),
+                            o.optDouble("k", 0.0).toFloat(),
                         )
                     )
                 }
@@ -179,7 +180,7 @@ class DepthWallpaperService : WallpaperService() {
                 val cx: Float
                 val cy: Float
                 if (l.cover) {
-                    s = max(w / bw, h / bh) * (1f + 0.2f * l.d + 4f * l.f)
+                    s = max(w / bw, h / bh) * (if (l.k > 0f) l.k else 1f + 0.2f * l.d + 4f * l.f)
                     cx = w / 2f + dx
                     cy = h / 2f + dy
                 } else {
