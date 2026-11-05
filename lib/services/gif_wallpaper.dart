@@ -21,9 +21,9 @@ class GifWallpaper {
         h = s.height.round();
       }
     } catch (_) {}
-    if (w > 1080) {
-      h = (h * 1080 / w).round();
-      w = 1080;
+    if (w > 720) {
+      h = (h * 720 / w).round();
+      w = 720;
     }
     return (w - w % 2, h - h % 2);
   }
@@ -32,9 +32,11 @@ class GifWallpaper {
   /// blurred copy of itself. Returns the mp4 path or null.
   static Future<String?> convert(String gifPath, {required bool fit}) async {
     final (w, h) = screenSize();
+    // Blur is cheap: shrink the background first, blur it small, scale back up.
     final filter = fit
         ? '[0:v]split[a][b];'
-            '[a]scale=$w:$h:force_original_aspect_ratio=increase,crop=$w:$h,boxblur=24:2[bg];'
+            '[a]scale=${w ~/ 8}:${h ~/ 8}:force_original_aspect_ratio=increase,crop=${w ~/ 8}:${h ~/ 8},'
+            'boxblur=3:1,scale=$w:$h[bg];'
             '[b]scale=$w:$h:force_original_aspect_ratio=decrease[fg];'
             '[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[o]'
         : '[0:v]scale=$w:$h:force_original_aspect_ratio=increase,crop=$w:$h,'
@@ -53,8 +55,9 @@ class GifWallpaper {
       '-an',
       '-fps_mode', 'vfr',
       '-c:v', 'libx264',
-      '-preset', 'veryfast',
-      '-crf', '22',
+      '-preset', 'ultrafast',
+      '-tune', 'fastdecode',
+      '-crf', '25',
       '-pix_fmt', 'yuv420p',
       '-movflags', '+faststart',
       out,
