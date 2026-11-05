@@ -43,32 +43,45 @@ class GifWallpaper {
             'setsar=1,format=yuv420p[o]';
     final base = await getApplicationSupportDirectory();
     final dir = await Directory('${base.path}/wallpaper').create(recursive: true);
-    final out = '${dir.path}/gifwall_${DateTime.now().millisecondsSinceEpoch}.mp4';
+    // Same GIF + same mode + same screen = reuse the earlier video.
+    final st = await File(gifPath).stat();
+    final key = '${gifPath.hashCode.toUnsigned(32)}_${st.size}_${st.modified.millisecondsSinceEpoch}_${fit ? 'fit' : 'fill'}_${w}x$h';
+    final out = '${dir.path}/gifwall_$key.mp4';
+    final cached = File(out);
+    if (await cached.exists() && await cached.length() > 0) return out;
+
     // -ignore_loop 0 reads the GIF once; the wallpaper player loops the mp4.
-    // -vsync vfr keeps each frame's real delay (no speed change).
-    final args = <String>[
-      '-y',
-      '-ignore_loop', '0',
-      '-i', gifPath,
-      '-filter_complex', filter,
-      '-map', '[o]',
-      '-an',
-      '-fps_mode', 'vfr',
-      '-c:v', 'libx264',
-      '-preset', 'ultrafast',
-      '-tune', 'fastdecode',
-      '-crf', '25',
-      '-pix_fmt', 'yuv420p',
-      '-movflags', '+faststart',
-      out,
+    // -fps_mode vfr keeps each frame's real delay (no speed change).
+    List<String> args(List<String> codec) => [
+          '-y',
+          '-ignore_loop', '0',
+          '-i', gifPath,
+          '-filter_complex', filter,
+          '-map', '[o]',
+          '-an',
+          '-fps_mode', 'vfr',
+          ...codec,
+          '-pix_fmt', 'yuv420p',
+          '-movflags', '+faststart',
+          out,
+        ];
+    // 1) phone's hardware encoder (fast); 2) software x264 if it is missing/fails.
+    final attempts = <List<String>>[
+      ['-c:v', 'h264_mediacodec', '-b:v', '8M'],
+      ['-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'fastdecode', '-crf', '20'],
     ];
-    try {
-      final session = await FFmpegKit.executeWithArguments(args);
-      final code = await session.getReturnCode();
-      if (ReturnCode.isSuccess(code) && await File(out).exists() && await File(out).length() > 0) {
-        return out;
-      }
-    } catch (_) {}
+    for (final codec in attempts) {
+      try {
+        final session = await FFmpegKit.executeWithArguments(args(codec));
+        final code = await session.getReturnCode();
+        if (ReturnCode.isSuccess(code) && await cached.exists() && await cached.length() > 0) {
+          return out;
+        }
+      } catch (_) {}
+      try {
+        if (await cached.exists()) await cached.delete();
+      } catch (_) {}
+    }
     return null;
   }
 
