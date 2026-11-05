@@ -8,6 +8,7 @@ import '../widgets/common.dart';
 import '../widgets/work_thumb.dart';
 import 'depth_editor_screen.dart';
 import 'gif_editor_screen.dart';
+import 'gif_wallpaper_screen.dart';
 import 'motion_editor_screen.dart';
 import 'my_work_screen.dart' show WorkViewer;
 import 'pick_media_screen.dart';
@@ -113,12 +114,23 @@ class _StudioScreenState extends State<StudioScreen> {
                       .push(MaterialPageRoute(builder: (_) => const GifEditorScreen()));
                 })
               else
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Column(
                   children: [
-                    Expanded(child: _CreateCard(video: true, onTap: () => _openPicker(context, true))),
-                    const SizedBox(width: 14),
-                    Expanded(child: _CreateCard(video: false, onTap: () => _openPicker(context, false))),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: _CreateCard(video: true, onTap: () => _openPicker(context, true))),
+                        const SizedBox(width: 14),
+                        Expanded(child: _CreateCard(video: false, onTap: () => _openPicker(context, false))),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _DepthCard(
+                      icon: Icons.gif_box_outlined,
+                      title: 'From a GIF',
+                      text: 'Pick a GIF from your gallery and play it as a live wallpaper.',
+                      onTap: () => GifWallpaperScreen.pickAndOpen(context),
+                    ),
                   ],
                 ),
               const SizedBox(height: 14),

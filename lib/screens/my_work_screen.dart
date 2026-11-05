@@ -11,6 +11,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/work_thumb.dart';
 import 'gif_editor_screen.dart';
+import 'gif_wallpaper_screen.dart';
 import 'studio_screen.dart';
 
 /// Everything the user made, by category. Updates the moment anything is added,
@@ -330,6 +331,11 @@ class _WorkViewerState extends State<WorkViewer> {
                 action(Icons.share_outlined, 'Share', _share),
                 action(Icons.download_outlined, 'Download', _download),
                 if (item.canEdit || item.canEditGif) action(Icons.edit_outlined, 'Edit', _edit),
+                if (item.isGif)
+                  action(Icons.wallpaper_outlined, 'Live wallpaper', () {
+                    Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => GifWallpaperScreen(path: item.file)));
+                  }),
                 action(Icons.delete_outline, 'Delete', _delete),
               ],
             ),

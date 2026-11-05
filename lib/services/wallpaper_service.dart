@@ -71,6 +71,8 @@ class WallpaperService {
     return r.success ? ApplyResult(true, okMsg) : ApplyResult(false, _explain(r));
   }
 
+  static String explain(fwp.WallpaperResult r) => _explain(r);
+
   static String _explain(fwp.WallpaperResult r) {
     switch (r.errorCode) {
       case fwp.WallpaperErrorCode.permissionDenied:
