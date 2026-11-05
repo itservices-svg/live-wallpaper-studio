@@ -47,14 +47,17 @@ class GifWallpaper {
     final st = await File(gifPath).stat();
     final key = '${gifPath.hashCode.toUnsigned(32)}_${st.size}_${st.modified.millisecondsSinceEpoch}_${fit ? 'fit' : 'fill'}_${w}x$h';
     final out = '${dir.path}/gifwall_$key.mp4';
+    final tmp = '${dir.path}/tmp_$key.mp4';
     final cached = File(out);
+    final tmpFile = File(tmp);
     if (await cached.exists() && await cached.length() > 0) return out;
 
-    // -ignore_loop 0 reads the GIF once; the wallpaper player loops the mp4.
+    // -ignore_loop 1 (ffmpeg default) reads the GIF ONCE; 0 would loop it forever
+    // and the conversion would never finish. The wallpaper player loops the mp4.
     // -fps_mode vfr keeps each frame's real delay (no speed change).
     List<String> args(List<String> codec) => [
           '-y',
-          '-ignore_loop', '0',
+          '-ignore_loop', '1',
           '-i', gifPath,
           '-filter_complex', filter,
           '-map', '[o]',
@@ -63,7 +66,7 @@ class GifWallpaper {
           ...codec,
           '-pix_fmt', 'yuv420p',
           '-movflags', '+faststart',
-          out,
+          tmp,
         ];
     // 1) phone's hardware encoder (fast); 2) software x264 if it is missing/fails.
     final attempts = <List<String>>[
@@ -74,12 +77,13 @@ class GifWallpaper {
       try {
         final session = await FFmpegKit.executeWithArguments(args(codec));
         final code = await session.getReturnCode();
-        if (ReturnCode.isSuccess(code) && await cached.exists() && await cached.length() > 0) {
+        if (ReturnCode.isSuccess(code) && await tmpFile.exists() && await tmpFile.length() > 0) {
+          await tmpFile.rename(out);
           return out;
         }
       } catch (_) {}
       try {
-        if (await cached.exists()) await cached.delete();
+        if (await tmpFile.exists()) await tmpFile.delete();
       } catch (_) {}
     }
     return null;
