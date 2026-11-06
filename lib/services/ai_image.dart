@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
-import '../config.dart';
 
 class AiImageException implements Exception {
   AiImageException(this.message);
@@ -17,15 +16,14 @@ class AiImageException implements Exception {
 /// touches this file.
 class AiImage {
   static const _host = 'https://prod.api.market';
-  // From the product's OpenAPI file: servers.url + /images/generations.
-  // The console log showed /v1/images/generations answers (400 = body problem)
-  // while the path without /v1 gives 404, so /v1 is the real route.
-  static const _base = '$_host/api/v1/aqua-ai/cheap-ai-image/v1';
+  /// Our own small Cloudflare Worker: it holds the AI access, so no key is in the app.
+  /// POST {"prompt": "..."} -> image bytes.
+  static const _worker = 'https://ai-wallpaper.adeelhashmi485.workers.dev';
 
   /// Soft per-day limit so a test key is not drained by accident.
   static const dailyLimit = 20;
 
-  static bool get hasKey => kAiImageKey.isNotEmpty;
+  static bool get hasKey => true;
 
   static Future<Directory> dir() async {
     final b = await getApplicationSupportDirectory();
@@ -80,18 +78,44 @@ class AiImage {
   }
 
   // ---- generate ------------------------------------------------------------
-  /// [model]: 'zimage' (fast) or 'gptimage-2' (better). Returns the saved PNG.
+  /// Returns the saved image file.
   static Future<File> generate(String prompt, {String model = 'zimage'}) async {
-    if (!hasKey) {
-      throw AiImageException('This build has no AI key. Add the AI_IMAGE_KEY secret and rebuild.');
-    }
     if (await usedToday() >= dailyLimit) {
       throw AiImageException('Daily limit reached ($dailyLimit). Try again tomorrow.');
     }
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
     try {
-      final url = await _request(client, prompt, model);
-      final bytes = await _fetch(client, url);
+      List<int> bytes = const [];
+      for (var attempt = 0; attempt < 2; attempt++) {
+        final body = utf8.encode(jsonEncode({'prompt': prompt}));
+        final req = await client.postUrl(Uri.parse(_worker));
+        req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+        req.contentLength = body.length;
+        req.add(body);
+        final res = await req.close().timeout(const Duration(seconds: 120),
+            onTimeout: () => throw AiImageException('The AI took too long. Try again.'));
+        final b = <int>[];
+        await for (final c in res) {
+          b.addAll(c);
+        }
+        if (res.statusCode == 200) {
+          final ok = b.length > 1000 &&
+              ((b[0] == 0x89 && b[1] == 0x50) || (b[0] == 0xFF && b[1] == 0xD8) || (b[0] == 0x52 && b[1] == 0x49));
+          if (!ok) throw AiImageException('The AI sent something that is not a picture.');
+          bytes = b;
+          break;
+        }
+        final text = utf8.decode(b, allowMalformed: true);
+        final short = text.length > 150 ? text.substring(0, 150) : text;
+        if ((res.statusCode == 502 || res.statusCode == 500) && attempt == 0) continue;
+        if (res.statusCode == 400) {
+          throw AiImageException('The prompt was rejected. Try different words.');
+        }
+        if (res.statusCode == 429) {
+          throw AiImageException('Too many requests. Wait a minute and try again.');
+        }
+        throw AiImageException('The AI service failed (${res.statusCode}). $short');
+      }
       final d = await dir();
       final f = File('${d.path}/ai_${DateTime.now().millisecondsSinceEpoch}.png');
       await f.writeAsBytes(bytes);
@@ -104,80 +128,5 @@ class AiImage {
     } finally {
       client.close();
     }
-  }
-
-  static void _auth(HttpClientRequest r) {
-    r.headers.set('x-api-market-key', kAiImageKey);
-  }
-
-  static Future<String> _request(HttpClient client, String prompt, String model) async {
-    for (var attempt = 0; attempt < 2; attempt++) {
-      final req = await client.postUrl(Uri.parse('$_base/images/generations'));
-      _auth(req);
-      final bytes = utf8.encode(jsonEncode({'model': model, 'prompt': prompt, 'ratio': 'portrait'}));
-      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-      // A fixed length (not chunked): some gateways read a chunked body as empty.
-      req.contentLength = bytes.length;
-      req.add(bytes);
-      final res = await req.close().timeout(const Duration(seconds: 120),
-          onTimeout: () => throw AiImageException('The AI took too long. Try again.'));
-      final body = await res.transform(utf8.decoder).join();
-      Map<String, dynamic> o = {};
-      try {
-        o = jsonDecode(body) as Map<String, dynamic>;
-      } catch (_) {}
-      final code = res.statusCode;
-      if (code == 200 && o['success'] != false && o['url'] is String) return o['url'] as String;
-      if ((code == 502 || code == 504 || code == 500) && attempt == 0) continue; // one retry
-      final err = (o['error'] ?? o['detail'] ?? '').toString();
-      final short = body.length > 150 ? body.substring(0, 150) : body;
-      switch (code) {
-        case 400:
-          throw AiImageException(err.toLowerCase().contains('safety')
-              ? 'This prompt was blocked by the safety filter. Try different words.'
-              : 'The request was rejected: ${err.isEmpty ? short : err}');
-        case 401:
-          throw AiImageException('The AI key is invalid or missing.');
-        case 402:
-          throw AiImageException('The AI credit is finished.');
-        case 403:
-          throw AiImageException('This key is not allowed to use the service.');
-        case 429:
-          throw AiImageException('Too many requests. Wait a minute and try again.');
-        default:
-          throw AiImageException('The AI service failed ($code). $short');
-      }
-    }
-    throw AiImageException('The AI service failed. Try again.');
-  }
-
-  /// The API returns a path like /generation/img_x.png. The host is not in the
-  /// docs, so try the likely prefixes until one returns an image.
-  static Future<List<int>> _fetch(HttpClient client, String url) async {
-    final candidates = url.startsWith('http')
-        ? [url]
-        : ['$_host$url', '$_base$url'];
-    for (final c in candidates) {
-      try {
-        final req = await client.getUrl(Uri.parse(c));
-        _auth(req);
-        final res = await req.close().timeout(const Duration(seconds: 60));
-        if (res.statusCode != 200) {
-          await res.drain<void>();
-          continue;
-        }
-        final b = <int>[];
-        await for (final chunk in res) {
-          b.addAll(chunk);
-        }
-        // PNG, JPEG or WEBP magic bytes.
-        final ok = b.length > 1000 &&
-            ((b[0] == 0x89 && b[1] == 0x50) ||
-                (b[0] == 0xFF && b[1] == 0xD8) ||
-                (b[0] == 0x52 && b[1] == 0x49));
-        if (ok) return b;
-      } catch (_) {}
-    }
-    throw AiImageException('The image was made but could not be downloaded. Try again.');
   }
 }

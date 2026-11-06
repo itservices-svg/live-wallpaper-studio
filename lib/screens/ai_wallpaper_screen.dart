@@ -51,7 +51,6 @@ class AiWallpaperScreen extends StatefulWidget {
 class _AiWallpaperScreenState extends State<AiWallpaperScreen> {
   final _prompt = TextEditingController();
   int _style = 0;
-  int _quality = 0; // 0 fast, 1 best
   bool _busy = false;
   String? _error;
   File? _current;
@@ -102,7 +101,7 @@ class _AiWallpaperScreenState extends State<AiWallpaperScreen> {
     final full = '$idea, ${_styles[_style].text}, vertical phone wallpaper, '
         'high quality, no text, no watermark, no border';
     try {
-      final f = await AiImage.generate(full, model: _quality == 0 ? 'zimage' : 'gptimage-2');
+      final f = await AiImage.generate(full, model: 'zimage');
       _current = f;
       await _refresh();
     } on AiImageException catch (e) {
@@ -169,13 +168,6 @@ class _AiWallpaperScreenState extends State<AiWallpaperScreen> {
                   const SizedBox(height: 8),
                   _styleRow(),
                   const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      const Text('QUALITY', style: AppText.mono),
-                      const SizedBox(width: 12),
-                      Expanded(child: Seg(labels: const ['Fast', 'Best'], index: _quality, onChanged: (i) => setState(() => _quality = i))),
-                    ],
-                  ),
                   const SizedBox(height: 16),
                   if (_busy)
                     _busyBar()
