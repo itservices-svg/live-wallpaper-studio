@@ -7,6 +7,7 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import '../widgets/work_thumb.dart';
 import 'depth_editor_screen.dart';
+import 'ai_wallpaper_screen.dart';
 import 'gif_editor_screen.dart';
 import 'gif_wallpaper_screen.dart';
 import 'motion_editor_screen.dart';
@@ -123,6 +124,14 @@ class _StudioScreenState extends State<StudioScreen> {
                         const SizedBox(width: 14),
                         Expanded(child: _CreateCard(video: false, onTap: () => _openPicker(context, false))),
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    _DepthCard(
+                      icon: Icons.auto_awesome,
+                      title: 'AI wallpaper',
+                      text: 'Type an idea, get a picture. Then make it a wallpaper or 3D.',
+                      onTap: () => Navigator.of(context)
+                          .push(MaterialPageRoute(builder: (_) => const AiWallpaperScreen())),
                     ),
                     const SizedBox(height: 12),
                     _DepthCard(

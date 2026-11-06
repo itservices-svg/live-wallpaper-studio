@@ -39,7 +39,10 @@ class _MaskPainter extends CustomPainter {
 
 /// Pick a photo, mark what is in front (a tree, a person ...), and get depth layers from it.
 class Photo3dScreen extends StatefulWidget {
-  const Photo3dScreen({super.key, this.holePath});
+  const Photo3dScreen({super.key, this.holePath, this.startPath});
+
+  /// Opens straight on this picture (e.g. an AI image) instead of asking to pick one.
+  final String? startPath;
 
   /// Set to make a see-through hole in this picture instead of cutting depth layers.
   final String? holePath;
@@ -67,7 +70,7 @@ class _Photo3dScreenState extends State<Photo3dScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final h = widget.holePath;
+      final h = widget.holePath ?? widget.startPath;
       if (h != null) {
         _load(h);
       } else {
