@@ -17,7 +17,16 @@ class AiImageException implements Exception {
 /// touches this file.
 class AiImage {
   static const _host = 'https://prod.api.market';
-  static const _base = '$_host/api/mcp/aqua-ai/cheap-ai-image/v1';
+  // The docs page shows a "mcp" base path, but API.market's usual form is
+  // /api/v1/<store>/<product>/... so try the likely ones in turn on a 404/405.
+  static const _bases = <String>[
+    '$_host/api/v1/aqua-ai/cheap-ai-image/v1',
+    '$_host/api/v1/aqua-ai/cheap-ai-image',
+    '$_host/api/mcp/aqua-ai/cheap-ai-image/v1',
+    '$_host/api/mcp/aqua-ai/cheap-ai-image',
+  ];
+  static String? _good; // the base that worked last time
+  static String _lastBase = _bases.first;
 
   /// Soft per-day limit so a test key is not drained by accident.
   static const dailyLimit = 20;
@@ -109,40 +118,54 @@ class AiImage {
   }
 
   static Future<String> _request(HttpClient client, String prompt, String model) async {
-    for (var attempt = 0; attempt < 2; attempt++) {
-      final req = await client.postUrl(Uri.parse('$_base/images/generations'));
-      _auth(req);
-      req.headers.contentType = ContentType.json;
-      req.add(utf8.encode(jsonEncode({'model': model, 'prompt': prompt, 'ratio': 'portrait'})));
-      final res = await req.close().timeout(const Duration(seconds: 120),
-          onTimeout: () => throw AiImageException('The AI took too long. Try again.'));
-      final body = await res.transform(utf8.decoder).join();
-      Map<String, dynamic> o = {};
-      try {
-        o = jsonDecode(body) as Map<String, dynamic>;
-      } catch (_) {}
-      final code = res.statusCode;
-      if (code == 200 && o['success'] != false && o['url'] is String) return o['url'] as String;
-      if ((code == 502 || code == 504 || code == 500) && attempt == 0) continue; // one retry
-      final err = (o['error'] ?? o['detail'] ?? '').toString();
-      switch (code) {
-        case 400:
-          throw AiImageException(err.toLowerCase().contains('safety')
-              ? 'This prompt was blocked by the safety filter. Try different words.'
-              : 'The request was rejected${err.isEmpty ? '' : ': $err'}');
-        case 401:
-          throw AiImageException('The AI key is invalid or missing.');
-        case 402:
-          throw AiImageException('The AI credit is finished.');
-        case 403:
-          throw AiImageException('This key is not allowed to use the service.');
-        case 429:
-          throw AiImageException('Too many requests. Wait a minute and try again.');
-        default:
-          throw AiImageException('The AI service failed ($code). Try again.');
+    final bases = [if (_good != null) _good!, ..._bases.where((b) => b != _good)];
+    var notFound = 0;
+    for (final base in bases) {
+      for (var attempt = 0; attempt < 2; attempt++) {
+        final req = await client.postUrl(Uri.parse('$base/images/generations'));
+        _auth(req);
+        req.headers.contentType = ContentType.json;
+        req.add(utf8.encode(jsonEncode({'model': model, 'prompt': prompt, 'ratio': 'portrait'})));
+        final res = await req.close().timeout(const Duration(seconds: 120),
+            onTimeout: () => throw AiImageException('The AI took too long. Try again.'));
+        final body = await res.transform(utf8.decoder).join();
+        Map<String, dynamic> o = {};
+        try {
+          o = jsonDecode(body) as Map<String, dynamic>;
+        } catch (_) {}
+        final code = res.statusCode;
+        if (code == 200 && o['success'] != false && o['url'] is String) {
+          _good = base;
+          _lastBase = base;
+          return o['url'] as String;
+        }
+        if (code == 404 || code == 405) {
+          notFound++;
+          break; // wrong address: next base
+        }
+        if ((code == 502 || code == 504 || code == 500) && attempt == 0) continue; // one retry
+        final err = (o['error'] ?? o['detail'] ?? '').toString();
+        switch (code) {
+          case 400:
+            throw AiImageException(err.toLowerCase().contains('safety')
+                ? 'This prompt was blocked by the safety filter. Try different words.'
+                : 'The request was rejected${err.isEmpty ? '' : ': $err'}');
+          case 401:
+            throw AiImageException('The AI key is invalid or missing.');
+          case 402:
+            throw AiImageException('The AI credit is finished.');
+          case 403:
+            throw AiImageException('This key is not allowed to use the service.');
+          case 429:
+            throw AiImageException('Too many requests. Wait a minute and try again.');
+          default:
+            final short = body.length > 120 ? body.substring(0, 120) : body;
+            throw AiImageException('The AI service failed ($code). $short');
+        }
       }
     }
-    throw AiImageException('The AI service failed. Try again.');
+    throw AiImageException(
+        'The AI address was not found (404 on $notFound addresses). The service may have changed; send this message to the developer.');
   }
 
   /// The API returns a path like /generation/img_x.png. The host is not in the
@@ -150,7 +173,7 @@ class AiImage {
   static Future<List<int>> _fetch(HttpClient client, String url) async {
     final candidates = url.startsWith('http')
         ? [url]
-        : ['$_host$url', '$_base$url', '$_host/api/mcp/aqua-ai/cheap-ai-image$url'];
+        : ['$_host$url', '$_lastBase$url'];
     for (final c in candidates) {
       try {
         final req = await client.getUrl(Uri.parse(c));
