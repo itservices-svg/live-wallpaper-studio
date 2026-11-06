@@ -152,7 +152,7 @@ class _AiWallpaperScreenState extends State<AiWallpaperScreen> {
       context: context,
       builder: (c) => AlertDialog(
         title: const Text('Make a video?'),
-        content: const Text('A ${AiImage.videoSeconds}-second video costs real money (about \$0.06, quick preview quality). '
+        content: const Text('A ${AiImage.videoSeconds}-second video costs real money (about \$0.03, quick preview quality). '
             'It can take a minute or two. Continue?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
