@@ -129,4 +129,80 @@ class AiImage {
       client.close();
     }
   }
+
+  // ---- video (MiniMax H3 Lite through the Worker's /video route) ------------
+  /// Videos cost real money per second, so the limit is small.
+  static const videoDailyLimit = 2;
+  static const videoSeconds = 4;
+
+  static Future<int> videoUsedToday() async {
+    try {
+      final f = File('${(await dir()).path}/usage_video.json');
+      if (!await f.exists()) return 0;
+      final o = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+      return o['day'] == _today() ? (o['n'] as num).toInt() : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static Future<File?> latestVideo() async {
+    try {
+      final d = await dir();
+      final files = d
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.contains('/aivid_') && f.path.endsWith('.mp4'))
+          .toList()
+        ..sort((a, b) => b.path.compareTo(a.path));
+      return files.isEmpty ? null : files.first;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Makes a short vertical video from text. Returns the saved mp4.
+  static Future<File> generateVideo(String prompt) async {
+    final used = await videoUsedToday();
+    if (used >= videoDailyLimit) {
+      throw AiImageException('Daily video limit reached ($videoDailyLimit). Try again tomorrow.');
+    }
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+    try {
+      final body = utf8.encode(jsonEncode({'prompt': prompt}));
+      final req = await client.postUrl(Uri.parse('$_worker/video'));
+      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      req.contentLength = body.length;
+      req.add(body);
+      final res = await req.close().timeout(const Duration(minutes: 6),
+          onTimeout: () => throw AiImageException('The video took too long. Try again.'));
+      final b = <int>[];
+      await for (final c in res) {
+        b.addAll(c);
+      }
+      if (res.statusCode != 200) {
+        final text = utf8.decode(b, allowMalformed: true);
+        final short = text.length > 200 ? text.substring(0, 200) : text;
+        if (res.statusCode == 400) throw AiImageException('The prompt was rejected. Try different words.');
+        throw AiImageException('The video service failed (${res.statusCode}). $short');
+      }
+      // An mp4 has "ftyp" at bytes 4..7.
+      final ok = b.length > 5000 && b[4] == 0x66 && b[5] == 0x74 && b[6] == 0x79 && b[7] == 0x70;
+      if (!ok) throw AiImageException('The AI sent something that is not a video.');
+      final d = await dir();
+      final f = File('${d.path}/aivid_${DateTime.now().millisecondsSinceEpoch}.mp4');
+      await f.writeAsBytes(b);
+      try {
+        await File('${d.path}/usage_video.json')
+            .writeAsString(jsonEncode({'day': _today(), 'n': used + 1}));
+      } catch (_) {}
+      return f;
+    } on SocketException {
+      throw AiImageException('No internet connection.');
+    } on HandshakeException {
+      throw AiImageException('Secure connection failed. Check your internet.');
+    } finally {
+      client.close();
+    }
+  }
 }

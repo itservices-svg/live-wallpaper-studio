@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 
 import '../data/scenes.dart';
 import '../services/ai_image.dart';
@@ -9,6 +10,7 @@ import '../services/wallpaper_service.dart';
 import '../state/studio_state.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'motion_editor_screen.dart';
 import 'photo3d_screen.dart';
 import 'preview_screen.dart';
 
@@ -51,6 +53,10 @@ class AiWallpaperScreen extends StatefulWidget {
 class _AiWallpaperScreenState extends State<AiWallpaperScreen> {
   final _prompt = TextEditingController();
   int _style = 0;
+  int _mode = 0; // 0 picture, 1 video
+  File? _video;
+  VideoPlayerController? _vc;
+  int _vused = 0;
   bool _busy = false;
   String? _error;
   File? _current;
@@ -65,6 +71,7 @@ class _AiWallpaperScreenState extends State<AiWallpaperScreen> {
 
   @override
   void dispose() {
+    _vc?.dispose();
     _prompt.dispose();
     super.dispose();
   }
@@ -72,6 +79,11 @@ class _AiWallpaperScreenState extends State<AiWallpaperScreen> {
   Future<void> _refresh() async {
     final h = await AiImage.history();
     final u = await AiImage.usedToday();
+    _vused = await AiImage.videoUsedToday();
+    if (_video == null) {
+      final v = await AiImage.latestVideo();
+      if (v != null) await _loadVideo(v);
+    }
     if (!mounted) return;
     setState(() {
       _history = h;
@@ -110,6 +122,78 @@ class _AiWallpaperScreenState extends State<AiWallpaperScreen> {
       _error = 'Something went wrong. Try again.';
     }
     if (mounted) setState(() => _busy = false);
+  }
+
+  Future<void> _loadVideo(File f) async {
+    final old = _vc;
+    final c = VideoPlayerController.file(f);
+    try {
+      await c.initialize();
+      await c.setLooping(true);
+      await c.setVolume(0);
+      await c.play();
+    } catch (_) {
+      await c.dispose();
+      return;
+    }
+    _vc = c;
+    _video = f;
+    await old?.dispose();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _generateVideo() async {
+    final idea = _prompt.text.trim();
+    if (idea.isEmpty) {
+      _toast('Describe your video first.');
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Make a video?'),
+        content: const Text('A ${AiImage.videoSeconds}-second video costs real money (about \$0.05). '
+            'It can take a minute or two. Continue?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('Make it')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final full = '$idea, ${_styles[_style].text}, vertical 9:16 phone wallpaper, '
+        'smooth seamless loop, gentle motion, no text, no watermark';
+    try {
+      final f = await AiImage.generateVideo(full);
+      await _loadVideo(f);
+      _vused = await AiImage.videoUsedToday();
+    } on AiImageException catch (e) {
+      _error = e.message;
+    } catch (e) {
+      _error = 'Something went wrong. Try again.';
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  void _videoAsWallpaper() {
+    final f = _video;
+    if (f == null) return;
+    studio.loadMedia(MediaItem.fromFile(f.path, 'AI video', video: true,
+        seconds: AiImage.videoSeconds.toDouble()));
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MotionEditorScreen()));
+  }
+
+  Future<void> _saveVideo() async {
+    final f = _video;
+    if (f == null) return;
+    final r = await WallpaperService.saveToGallery(f.path,
+        name: 'ai_video_${DateTime.now().millisecondsSinceEpoch}', video: true);
+    _toast(r.ok ? 'Saved to your gallery' : r.message);
   }
 
   void _surprise() {
@@ -157,9 +241,22 @@ class _AiWallpaperScreenState extends State<AiWallpaperScreen> {
                 padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
                 children: [
                   if (!AiImage.hasKey) _notice('This build has no AI key yet. Add the AI_IMAGE_KEY secret and rebuild.'),
-                  _preview(),
+                  Seg(
+                    labels: const ['Picture', 'Video'],
+                    index: _mode,
+                    onChanged: (i) {
+                      if (_busy) return;
+                      setState(() {
+                        _mode = i;
+                        _error = null;
+                      });
+                    },
+                  ),
                   const SizedBox(height: 14),
-                  if (_current != null && !_busy) _actions(),
+                  _mode == 0 ? _preview() : _videoPreview(),
+                  const SizedBox(height: 14),
+                  if (_mode == 0 && _current != null && !_busy) _actions(),
+                  if (_mode == 1 && _video != null && !_busy) _videoActions(),
                   if (_error != null) _notice(_error!, error: true),
                   const SizedBox(height: 14),
                   _promptBox(),
@@ -172,10 +269,20 @@ class _AiWallpaperScreenState extends State<AiWallpaperScreen> {
                   if (_busy)
                     _busyBar()
                   else
-                    PrimaryButton(label: _current == null ? 'Generate' : 'Generate new', wide: true, onTap: _generate),
+                    PrimaryButton(
+                        label: _mode == 0
+                            ? (_current == null ? 'Generate' : 'Generate new')
+                            : 'Make ${AiImage.videoSeconds}-sec video',
+                        wide: true,
+                        onTap: _mode == 0 ? _generate : _generateVideo),
                   const SizedBox(height: 8),
-                  Center(child: Text('$left of ${AiImage.dailyLimit} left today', style: AppText.small)),
-                  if (_history.length > 1) ...[
+                  Center(
+                      child: Text(
+                          _mode == 0
+                              ? '$left of ${AiImage.dailyLimit} left today'
+                              : '${(AiImage.videoDailyLimit - _vused).clamp(0, AiImage.videoDailyLimit)} of ${AiImage.videoDailyLimit} videos left today',
+                          style: AppText.small)),
+                  if (_mode == 0 && _history.length > 1) ...[
                     const SizedBox(height: 18),
                     const Text('YOUR AI PICTURES', style: AppText.mono),
                     const SizedBox(height: 8),
@@ -238,6 +345,103 @@ class _AiWallpaperScreenState extends State<AiWallpaperScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _videoPreview() {
+    final c = _vc;
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 250),
+        child: AspectRatio(
+          aspectRatio: 9 / 16,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(26),
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: AppColors.line, width: 2),
+                borderRadius: BorderRadius.circular(26),
+                color: const Color(0xFFE7E2F8),
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (c != null && c.value.isInitialized)
+                    FittedBox(
+                      fit: BoxFit.cover,
+                      clipBehavior: Clip.hardEdge,
+                      child: SizedBox(
+                        width: c.value.size.width,
+                        height: c.value.size.height,
+                        child: VideoPlayer(c),
+                      ),
+                    )
+                  else
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.movie_creation_outlined, size: 38, color: AppColors.pri),
+                            const SizedBox(height: 10),
+                            Text('Describe it.\nAI films it.', textAlign: TextAlign.center, style: AppText.h2),
+                          ],
+                        ),
+                      ),
+                    ),
+                  if (_busy)
+                    Container(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      child: const Center(child: CircularProgressIndicator(color: Colors.white)),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _videoActions() {
+    Widget btn(IconData i, String l, VoidCallback t, {bool main = false}) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Material(
+              color: main ? AppColors.pri : Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: t,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: main ? AppColors.pri : AppColors.line),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(i, size: 21, color: main ? Colors.white : AppColors.ink),
+                      const SizedBox(height: 3),
+                      Text(l,
+                          style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: main ? Colors.white : AppColors.ink)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+    return Row(
+      children: [
+        btn(Icons.wallpaper_outlined, 'Live wallpaper', _videoAsWallpaper, main: true),
+        btn(Icons.download_outlined, 'Save', _saveVideo),
+      ],
     );
   }
 
