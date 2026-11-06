@@ -18,7 +18,9 @@ class AiImageException implements Exception {
 class AiImage {
   static const _host = 'https://prod.api.market';
   // From the product's OpenAPI file: servers.url + /images/generations.
-  static const _base = '$_host/api/v1/aqua-ai/cheap-ai-image';
+  // The console log showed /v1/images/generations answers (400 = body problem)
+  // while the path without /v1 gives 404, so /v1 is the real route.
+  static const _base = '$_host/api/v1/aqua-ai/cheap-ai-image/v1';
 
   /// Soft per-day limit so a test key is not drained by accident.
   static const dailyLimit = 20;
@@ -112,8 +114,11 @@ class AiImage {
     for (var attempt = 0; attempt < 2; attempt++) {
       final req = await client.postUrl(Uri.parse('$_base/images/generations'));
       _auth(req);
-      req.headers.contentType = ContentType.json;
-      req.add(utf8.encode(jsonEncode({'model': model, 'prompt': prompt, 'ratio': 'portrait'})));
+      final bytes = utf8.encode(jsonEncode({'model': model, 'prompt': prompt, 'ratio': 'portrait'}));
+      req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      // A fixed length (not chunked): some gateways read a chunked body as empty.
+      req.contentLength = bytes.length;
+      req.add(bytes);
       final res = await req.close().timeout(const Duration(seconds: 120),
           onTimeout: () => throw AiImageException('The AI took too long. Try again.'));
       final body = await res.transform(utf8.decoder).join();
