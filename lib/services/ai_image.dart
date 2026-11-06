@@ -117,15 +117,26 @@ class AiImage {
     r.headers.set('x-api-market-key', kAiImageKey);
   }
 
+  static String err0(Map<String, dynamic> o) => (o['error'] ?? o['detail'] ?? '').toString();
+
   static Future<String> _request(HttpClient client, String prompt, String model) async {
     final bases = [if (_good != null) _good!, ..._bases.where((b) => b != _good)];
     var notFound = 0;
+    // If the full request is rejected (400), retry with a plainer body.
+    final bodies = <Map<String, dynamic>>[
+      {'model': model, 'prompt': prompt, 'ratio': 'portrait'},
+      {'model': model, 'prompt': prompt},
+    ];
     for (final base in bases) {
+     var vi = 0;
+     while (vi < bodies.length) {
+      final payload = bodies[vi];
+      var next = false;
       for (var attempt = 0; attempt < 2; attempt++) {
         final req = await client.postUrl(Uri.parse('$base/images/generations'));
         _auth(req);
         req.headers.contentType = ContentType.json;
-        req.add(utf8.encode(jsonEncode({'model': model, 'prompt': prompt, 'ratio': 'portrait'})));
+        req.add(utf8.encode(jsonEncode(payload)));
         final res = await req.close().timeout(const Duration(seconds: 120),
             onTimeout: () => throw AiImageException('The AI took too long. Try again.'));
         final body = await res.transform(utf8.decoder).join();
@@ -141,7 +152,12 @@ class AiImage {
         }
         if (code == 404 || code == 405) {
           notFound++;
-          break; // wrong address: next base
+          vi = bodies.length; // wrong address: next base
+          break;
+        }
+        if (code == 400 && !err0(o).toLowerCase().contains('safety') && vi < bodies.length - 1) {
+          next = true;
+          break; // plainer body
         }
         if ((code == 502 || code == 504 || code == 500) && attempt == 0) continue; // one retry
         final err = (o['error'] ?? o['detail'] ?? '').toString();
@@ -149,7 +165,7 @@ class AiImage {
           case 400:
             throw AiImageException(err.toLowerCase().contains('safety')
                 ? 'This prompt was blocked by the safety filter. Try different words.'
-                : 'The request was rejected${err.isEmpty ? '' : ': $err'}');
+                : 'The request was rejected: ${err.isEmpty ? (body.length > 150 ? body.substring(0, 150) : body) : err}');
           case 401:
             throw AiImageException('The AI key is invalid or missing.');
           case 402:
@@ -163,6 +179,12 @@ class AiImage {
             throw AiImageException('The AI service failed ($code). $short');
         }
       }
+      if (next) {
+        vi++;
+      } else {
+        break;
+      }
+     }
     }
     throw AiImageException(
         'The AI address was not found (404 on $notFound addresses). The service may have changed; send this message to the developer.');
