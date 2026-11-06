@@ -130,10 +130,10 @@ class AiImage {
     }
   }
 
-  // ---- video (MiniMax H3 Lite through the Worker's /video route) ------------
+  // ---- video (FLUX 3 Video, draft mode, through the Worker's /video route) ------------
   /// Videos cost real money per second, so the limit is small.
   static const videoDailyLimit = 2;
-  static const videoSeconds = 4;
+  static const videoSeconds = 5;
 
   static Future<int> videoUsedToday() async {
     try {
